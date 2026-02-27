@@ -34,66 +34,110 @@ enclosed open close = between (char open >> sc) (char close >> sc)
 symbol :: String -> Parser String
 symbol = L.symbol sc
 
--- Primitive parsers
+-- * Primitive parsers
 
-identP :: Parser String
-identP = lexeme ((:) <$> letterChar <*> many alphas')
+pIdent :: Parser String
+pIdent = lexeme ((:) <$> letterChar <*> many alphas')
   where
     -- Allow ' and _ in identifiers
     alphas' = letterChar <|> alphaNumChar <|> char '\'' <|> char '_'
 
 -- Literals
-integerP :: Parser Integer
-integerP = lexeme L.decimal
+pInteger :: Parser Integer
+pInteger = lexeme L.decimal
 
-floatP :: Parser Double
-floatP = lexeme L.float
+pFloat :: Parser Double
+pFloat = lexeme L.float
 
-stringLitP :: Parser String
-stringLitP = lexeme (char '"' >> manyTill L.charLiteral (char '"'))
+pString :: Parser String
+pString = lexeme (char '"' >> manyTill L.charLiteral (char '"'))
 
-literalP :: Parser Literal
-literalP =
+pLiteral :: Parser Literal
+pLiteral =
   choice
-    [ LitInt <$> integerP, -- 42
-      LitFloat <$> floatP, -- 3.14
-      LitString <$> stringLitP, -- "string literals"
+    [ LitInt <$> pInteger, -- 42
+      LitFloat <$> pFloat, -- 3.14
+      LitString <$> pString, -- "string literals"
       LitBool True <$ symbol "true",
       LitBool False <$ symbol "false"
     ]
 
--- Expression parser
+-- * Type parsers
+
+pBaseTy :: Parser Ty
+pBaseTy =
+  choice
+    [ TInt <$ symbol "Int",
+      TFloat <$ symbol "Float",
+      TBool <$ symbol "Bool",
+      TString <$ symbol "String",
+      TUnit <$ symbol "()",
+      TVar <$> pIdent,
+      parens pArrowTy
+    ]
+  where
+    parens = enclosed '(' ')'
+
+-- Parse arrow types: Int -> Int, (a -> b)
+pArrowTy :: Parser Ty
+pArrowTy = do
+  base <- pBaseTy
+  rest <- optional (symbol "->" >> pArrowTy)
+  pure $ case rest of
+    Just f -> TFn base f
+    Nothing -> base
+
+-- Parse types with type constructors
+pType :: Parser Ty
+pType = do
+  base <- pArrowTy
+  pars <- optional $ enclosed '[' ']' (sepBy pType (symbol ","))
+  pure $ case pars of
+    Just ps -> TCons (show base) ps
+    Nothing -> base
+
+-- * Expression parser
 
 -- Lists and tuples: [1, 2, 3], (1, 2, 3)
-listP :: Parser Expr
-listP = enclosed '[' ']' (EList <$> sepBy exprP (symbol ","))
+pList :: Parser Expr
+pList = enclosed '[' ']' (EList <$> sepBy pExpr (symbol ","))
 
-tupleP :: Parser Expr
-tupleP = enclosed '(' ')' (ETuple <$> sepBy exprP (symbol ","))
+pTuple :: Parser Expr
+pTuple = enclosed '(' ')' (ETuple <$> sepBy pExpr (symbol ","))
 
-applicationP :: Parser Expr
-applicationP = do
-  f <- termP
-  args <- many termP
+pApp :: Parser Expr
+pApp = do
+  f <- pTerm
+  args <- many pTerm
   pure $ foldl EApp f args
 
-lambdaP :: Parser Expr
-lambdaP = do
+pLambda :: Parser Expr
+pLambda = do
   _ <- symbol "\\"
-  binders <- some identP
+  binders <- some pIdent
   _ <- symbol "->"
-  ELam binders <$> exprP
+  ELam binders <$> pExpr
+
+pIf :: Parser Expr
+pIf = do
+  _ <- symbol "if"
+  cond <- pExpr
+  _ <- symbol "then"
+  thenBranch <- pExpr
+  _ <- symbol "else"
+  EIf cond thenBranch <$> pExpr
 
 -- Term parser
-termP :: Parser Expr
-termP =
+pTerm :: Parser Expr
+pTerm =
   choice
-    [ parens exprP,
-      listP,
-      tupleP,
-      lambdaP,
-      ELit <$> literalP,
-      EIdent <$> identP
+    [ parens pExpr,
+      pList,
+      pTuple,
+      pLambda,
+      pIf,
+      ELit <$> pLiteral,
+      EIdent <$> pIdent
     ]
   where
     parens = enclosed '(' ')'
@@ -129,5 +173,5 @@ operatorTable =
       AssocRight -> InfixR (f <$ symbol sym)
       AssocNone -> InfixN (f <$ symbol sym)
 
-exprP :: Parser Expr
-exprP = makeExprParser applicationP operatorTable
+pExpr :: Parser Expr
+pExpr = makeExprParser pApp operatorTable

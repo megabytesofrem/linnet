@@ -7,6 +7,10 @@ module AST
     BinOp (..),
     Literal (..),
     Expr (..),
+
+    -- * Binders
+    Binder (..),
+    LoopBinder (..),
   )
 where
 
@@ -65,6 +69,13 @@ data Literal
   | LitString String
   deriving (Show, Eq)
 
+data Binder = Binder String (Maybe Ty)
+  deriving (Show, Eq)
+
+-- Binder used for loops, which can have a type annot and an initial value
+data LoopBinder = LoopBinder String (Maybe Ty) Expr
+  deriving (Show, Eq)
+
 data Expr
   = ELit Literal
   | EUnit -- ()
@@ -75,4 +86,7 @@ data Expr
   | EList [Expr] -- [1, 2, 3]
   | ETuple [Expr] -- (1, 2, 3)
   | EApp Expr Expr -- f x y z
+  | ELet Binder Expr Expr -- let x = expr1 in expr2
+  | EIf Expr Expr Expr -- if cond then expr1 else expr2
+  | ELoop [LoopBinder] Expr -- loop (binders) expr
   deriving (Show, Eq)
