@@ -1,3 +1,6 @@
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot #-}
+
 module Linnet.AST
   ( Ty (..)
   , Associativity (..)
@@ -7,6 +10,9 @@ module Linnet.AST
   , BinOp (..)
   , Literal (..)
   , Expr (..)
+  , Decl (..)
+  , TypeclassDecl (..)
+  , TypeclassImpl (..)
 
     -- * Binders
   , Binder (..)
@@ -95,5 +101,27 @@ data Expr
   | ELetM Binder Expr -- let! x = expr
   | EBind String Expr -- x <- m
   | EBlock [Expr]     -- !{ expr1; expr2; ... }
+  deriving (Show, Eq)
+{- FOURMOLU_ENABLE -}
+
+data TypeclassDecl = TypeclassDecl
+  { className :: String
+  , typeParams :: [String]
+  , methods :: [(String, [String], Ty)]
+  }
+  deriving (Show, Eq)
+
+data TypeclassImpl = TypeclassImpl
+  { implClassName :: String
+  , implType :: Ty
+  , implMethods :: [(String, Expr)]
+  }
+  deriving (Show, Eq)
+
+{- FOURMOLU_DISABLE -}
+data Decl =
+    DeclExpr Expr
+  | DeclClass TypeclassDecl
+  | DeclImpl TypeclassImpl
   deriving (Show, Eq)
 {- FOURMOLU_ENABLE -}
