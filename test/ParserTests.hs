@@ -54,8 +54,10 @@ exprTests =
     , testCase "parse lambda expression: \\x y -> x + y" $
         parses pExpr "\\x y -> x + y"
           @?= Just (ELam ["x", "y"] (EBinOp Add (EIdent "x") (EIdent "y")))
-    , -- FIX: Parsing if expressions
-      testCase "parse if expression: if x then y else z" $
+    , testCase "parse let expression: let x = 1 in x + 2" $
+        parses pExpr "let x = 1 in x + 2"
+          @?= Just (ELet (Binder "x" Nothing) (ELit (LitInt 1)) (EBinOp Add (EIdent "x") (ELit (LitInt 2))))
+    , testCase "parse if expression: if x then y else z" $
         parses pExpr "if x then y else z"
           @?= Just (EIf (EIdent "x") (EIdent "y") (EIdent "z"))
     ]

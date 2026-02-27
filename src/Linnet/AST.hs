@@ -37,7 +37,7 @@ data UnaryOp
   = Negate -- -x
   deriving (Show, Eq)
 
-{- ORMOLU_DISABLE -}
+{- FOURMOLU_DISABLE -}
 data BinOp
   = Add
   | Sub
@@ -60,7 +60,7 @@ data BinOp
   | UFO     -- f <*> x
   | Alt     -- x <|> y
   deriving (Show, Eq)
-{- ORMOLU_ENABLE -}
+{- FOURMOLU_ENABLE -}
 
 data Literal
   = LitInt Integer
@@ -76,6 +76,7 @@ data Binder = Binder String (Maybe Ty)
 data LoopBinder = LoopBinder String (Maybe Ty) Expr
   deriving (Show, Eq)
 
+{- FOURMOLU_DISABLE -}
 data Expr
   = ELit Literal
   | EUnit -- ()
@@ -89,4 +90,10 @@ data Expr
   | ELet Binder Expr Expr -- let x = expr1 in expr2
   | EIf Expr Expr Expr -- if cond then expr1 else expr2
   | ELoop [LoopBinder] Expr -- loop (binders) expr
+  
+  -- Monadic binding and blocks
+  | ELetM Binder Expr -- let! x = expr
+  | EBind String Expr -- x <- m
+  | EBlock [Expr]     -- !{ expr1; expr2; ... }
   deriving (Show, Eq)
+{- FOURMOLU_ENABLE -}

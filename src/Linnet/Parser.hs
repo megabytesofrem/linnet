@@ -12,6 +12,7 @@ where
 import Linnet.AST
 
 import Control.Monad.Combinators.Expr
+import Data.Maybe (fromMaybe)
 import Data.Void (Void)
 import Text.Megaparsec
 import Text.Megaparsec.Char
@@ -54,6 +55,9 @@ isReserved k = k `elem` reserved
 -- | Parse something between parentheses, brackets, or braces.
 enclosed :: Char -> Char -> Parser a -> Parser a
 enclosed open close = between (char open >> sc) (char close >> sc)
+
+sepByTokenOrEOL :: Parser a -> String -> Parser [a]
+sepByTokenOrEOL p sep = sepEndBy1 p (symbol sep <|> eol)
 
 symbol :: String -> Parser String
 symbol = L.symbol sc
@@ -145,6 +149,16 @@ pLambda = do
   _ <- symbol "->"
   ELam binders <$> pExpr
 
+pLet :: Parser Expr
+pLet = do
+  _ <- symbol "let"
+  name <- pIdent
+  ty <- optional (symbol ":" >> pType)
+  _ <- symbol "="
+  val <- pExpr
+  _ <- symbol "in"
+  ELet (Binder name ty) val <$> pExpr
+
 pIf :: Parser Expr
 pIf = do
   _ <- symbol "if"
@@ -154,11 +168,61 @@ pIf = do
   _ <- symbol "else"
   EIf cond thenBranch <$> pExpr
 
+pLoop :: Parser Expr
+pLoop = do
+  _ <- symbol "loop"
+  binders <- many parseBinder
+  symbol "{" >> ELoop binders <$> pExpr <* symbol "}"
+ where
+  defaultValue ty = case ty of
+    Just TInt -> ELit (LitInt 0)
+    Just TFloat -> ELit (LitFloat 0.0)
+    Just TBool -> ELit (LitBool False)
+    Just TString -> ELit (LitString "")
+    _ -> EUnit -- Default to unit if no type or unknown type
+
+  -- Parse a loop binder (i: ty? = val?)
+  parseBinder = do
+    name <- pIdent
+    ty <- optional (symbol ":" >> pType)
+    val <- optional (symbol "=" >> pExpr)
+    pure $ LoopBinder name ty (fromMaybe (defaultValue ty) val)
+
+-- Parse a monadic binding: x <- m
+pMonadBind :: Parser Expr
+pMonadBind = do
+  ident <- pIdent
+  _ <- symbol "<-"
+  EBind ident <$> pExpr
+
+pMonadLet :: Parser Expr
+pMonadLet = do
+  _ <- symbol "let!"
+  ident <- pIdent
+  ty <- optional (symbol ":" >> pType)
+  _ <- symbol "="
+  ELetM (Binder ident ty) <$> pExpr
+
+-- NOTE: Blocks are monadic sequencing, essentially do-notation
+-- They are not blocks in the imperative sense, since Linnet is purely functional.
+pMonadBlock :: Parser Expr
+pMonadBlock = do
+  _ <- symbol "!"
+  exprs <- enclosed '{' '}' (sepByTokenOrEOL validExpr ";")
+  pure $ EBlock exprs
+ where
+  -- A valid expression in a monadic block can be a let!, bind, or a regular expression
+  validExpr = pMonadLet <|> pMonadBind <|> pExpr
+
 -- Term parser
 pTerm :: Parser Expr
 pTerm =
   choice
-    [ pIf
+    [ -- Parse monadic blocks first to allow let! and bind syntax inside them
+      pMonadBlock
+    , pLet
+    , pIf
+    , pLoop
     , parenExprOrTuple
     , pList
     , pLambda
