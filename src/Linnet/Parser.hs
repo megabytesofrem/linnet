@@ -2,12 +2,18 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Parser where
+module Linnet.Parser
+  ( pLiteral,
+    pType,
+    pExpr,
+  )
+where
 
 -- AST
-import AST
+
 import Control.Monad.Combinators.Expr
 import Data.Void (Void)
+import Linnet.AST
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import Text.Megaparsec.Char.Lexer qualified as L
@@ -93,7 +99,9 @@ pType = do
   base <- pArrowTy
   pars <- optional $ enclosed '[' ']' (sepBy pType (symbol ","))
   pure $ case pars of
-    Just ps -> TCons (show base) ps
+    Just ps -> case base of
+      TVar name -> TCons name ps
+      _ -> error "Type constructor must be a type variable"
     Nothing -> base
 
 -- * Expression parser
@@ -101,9 +109,6 @@ pType = do
 -- Lists and tuples: [1, 2, 3], (1, 2, 3)
 pList :: Parser Expr
 pList = enclosed '[' ']' (EList <$> sepBy pExpr (symbol ","))
-
-pTuple :: Parser Expr
-pTuple = enclosed '(' ')' (ETuple <$> sepBy pExpr (symbol ","))
 
 pApp :: Parser Expr
 pApp = do
@@ -131,16 +136,20 @@ pIf = do
 pTerm :: Parser Expr
 pTerm =
   choice
-    [ parens pExpr,
+    [ parenExprOrTuple,
       pList,
-      pTuple,
       pLambda,
       pIf,
       ELit <$> pLiteral,
       EIdent <$> pIdent
     ]
   where
-    parens = enclosed '(' ')'
+    parenExprOrTuple = enclosed '(' ')' $ do
+      exprs <- sepBy pExpr (symbol ",")
+      pure $ case exprs of
+        [] -> EUnit -- () is the unit value
+        [e] -> e -- Just a parenthesized expression
+        es -> ETuple es -- A tuple
 
 -- Higher in the list = higher precedence.
 operatorTable :: [[Operator Parser Expr]]

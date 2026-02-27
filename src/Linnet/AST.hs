@@ -1,4 +1,4 @@
-module AST
+module Linnet.AST
   ( Ty (..),
     Associativity (..),
 
