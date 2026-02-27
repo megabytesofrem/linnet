@@ -81,11 +81,11 @@ data Expr
   = ELit Literal
   | EUnit -- ()
   | EIdent String
-  | ELam [String] Expr -- \x y -> expr
   | EUnaryOp UnaryOp Expr
   | EBinOp BinOp Expr Expr
   | EList [Expr] -- [1, 2, 3]
   | ETuple [Expr] -- (1, 2, 3)
+  | ELam [String] Expr -- \x y -> expr
   | EApp Expr Expr -- f x y z
   | ELet Binder Expr Expr -- let x = expr1 in expr2
   | EIf Expr Expr Expr -- if cond then expr1 else expr2
