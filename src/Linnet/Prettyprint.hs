@@ -2,7 +2,9 @@
 
 module Linnet.Prettyprint where
 
-import Data.List (foldl', intercalate)
+import Control.Monad (forM)
+import Control.Monad.State
+import Data.List (intercalate)
 import Linnet.AST
 
 -- State for the pretty printer
@@ -10,193 +12,208 @@ newtype PrettyprintState = PrettyprintState
   { indentLevel :: Int
   }
 
+-- Prettyprinter monad to keep track of indentation and state
+type Prettyprinter a = State PrettyprintState a
+
+prettyPrintWith
+  :: (Prettyprint a, Traversable t)
+  => (a -> Prettyprinter String)
+  -> t a
+  -> Prettyprinter (t String)
+prettyPrintWith = traverse
+
+prettyPrintFoldable
+  :: (Prettyprint a, Traversable t)
+  => t a
+  -> Prettyprinter (t String)
+prettyPrintFoldable = traverse pretty
+
 indentsToSpaces :: PrettyprintState -> String
 indentsToSpaces p = replicate (indentLevel p * 2) ' '
 
--- Helper function to pretty print any Foldable collection of Prettyprint items
--- We thread the state through to maintain correct indentation if needed
-prettyPrintFoldable
-  :: (Prettyprint s, Foldable t)
-  => PrettyprintState
-  -> t s
-  -> ([String], PrettyprintState)
-prettyPrintFoldable initialP =
-  foldl'
-    ( \(acc, st) el ->
-        let (str, st') = pretty st el in (acc <> [str], st')
-    )
-    ([], initialP)
+getIndent :: Prettyprinter String
+getIndent = gets indentsToSpaces
 
-prettyPrintWith
-  :: (a -> PrettyprintState -> (String, PrettyprintState))
-  -> PrettyprintState
-  -> [a]
-  -> ([String], PrettyprintState)
-prettyPrintWith f initialP =
-  foldl'
-    ( \(acc, st) el ->
-        let (str, st') = f el st
-         in (acc <> [str], st')
-    )
-    ([], initialP)
+withIndent :: Prettyprinter String -> Prettyprinter String
+withIndent action = do
+  oldLevel <- gets indentLevel
+  modify $ \s -> s{indentLevel = oldLevel + 1}
+  result <- action
+  modify $ \s -> s{indentLevel = oldLevel}
+  pure result
 
 -- Typeclass for pretty printing AST nodes
 class Prettyprint a where
-  -- | `pretty` takes a PrettyprintState to keep track of indent level
-  pretty :: PrettyprintState -> a -> (String, PrettyprintState)
+  pretty :: a -> Prettyprinter String
 
 instance Prettyprint Ty where
-  pretty p TInt = ("Int", p)
-  pretty p TFloat = ("Float", p)
-  pretty p TBool = ("Bool", p)
-  pretty p TString = ("String", p)
-  pretty p TUnit = ("()", p)
-  pretty p (TFn arg ret) =
-    let argStr = case arg of
-          TFn _ _ -> "(" <> fst (pretty p arg) <> ")"
-          _ -> fst (pretty p arg)
-        (retStr, p') = pretty p ret
-     in (argStr <> " -> " <> retStr, p')
-  pretty p (TVar name) = (name, p)
-  pretty p (TForall var ty) =
-    let (tyStr, p') = pretty p ty
-     in ("forall " <> var <> ". " <> tyStr, p')
-  pretty p (TCons name params) =
-    let (paramsStr, p') = prettyPrintFoldable p params
-     in (name <> "[" <> intercalate ", " paramsStr <> "]", p')
+  pretty TInt = pure "Int"
+  pretty TFloat = pure "Float"
+  pretty TBool = pure "Bool"
+  pretty TString = pure "String"
+  pretty TUnit = pure "()"
+  pretty (TFn arg ret) = do
+    argStr <- case arg of
+      TFn _ _ -> (\s -> "(" <> s <> ")") <$> pretty arg
+      _ -> pretty arg
+    retStr <- pretty ret
+    pure $ argStr <> " -> " <> retStr
+  pretty (TVar name) = pure name
+  pretty (TForall var ty) = do
+    tyStr <- pretty ty
+    pure $ "forall " <> var <> ". " <> tyStr
+  pretty (TCons name params) = do
+    paramStr <- prettyPrintFoldable params
+    pure $ name <> "[" <> intercalate ", " paramStr <> "]"
 
 instance Prettyprint UnaryOp where
-  pretty p Negate = ("-", p)
+  pretty Negate = pure "-"
 
 instance Prettyprint BinOp where
-  pretty p Add = ("+", p)
-  pretty p Sub = ("-", p)
-  pretty p Mul = ("*", p)
-  pretty p Div = ("/", p)
-  pretty p Mod = ("%", p)
-  pretty p Eq = ("==", p)
-  pretty p Neq = ("/=", p)
-  pretty p Lt = ("<", p)
-  pretty p Gt = (">", p)
-  pretty p LtEq = ("<=", p)
-  pretty p GtEq = (">=", p)
+  pretty Add = pure "+"
+  pretty Sub = pure "-"
+  pretty Mul = pure "*"
+  pretty Div = pure "/"
+  pretty Mod = pure "%"
+  pretty Eq = pure "=="
+  pretty Neq = pure "/="
+  pretty Lt = pure "<"
+  pretty Gt = pure ">"
+  pretty LtEq = pure "<="
+  pretty GtEq = pure ">="
   -- \* Functional operators
-  pretty p Apply = (" ", p)
-  pretty p Compose = (".", p)
-  pretty p Bind = (">>=", p)
-  pretty p Pipe = (">>", p)
-  pretty p Map = ("<$>", p)
-  pretty p UFO = ("<*>", p)
-  pretty p Alt = ("<|>", p)
+  pretty Apply = pure " "
+  pretty Compose = pure "."
+  pretty Bind = pure ">>="
+  pretty Pipe = pure ">>"
+  pretty Map = pure "<$>"
+  pretty UFO = pure "<*>"
+  pretty Alt = pure "<|>"
 
 instance Prettyprint Literal where
-  pretty p (LitInt n) = (show n, p)
-  pretty p (LitFloat f) = (show f, p)
-  pretty p (LitBool b) = (show b, p)
-  pretty p (LitString s) = (show s, p)
+  pretty (LitInt n) = pure $ show n
+  pretty (LitFloat f) = pure $ show f
+  pretty (LitBool b) = pure $ show b
+  pretty (LitString s) = pure $ show s
 
 instance Prettyprint Binder where
-  pretty p (Binder name mty) =
-    let tyStr = case mty of
-          Just ty -> ": " <> fst (pretty p ty)
-          Nothing -> ""
-     in (name <> tyStr, p)
+  pretty (Binder name mty) = do
+    tyStr <- case mty of
+      Just ty -> do
+        tyStr' <- pretty ty
+        pure $ ": " <> tyStr'
+      Nothing -> pure ""
+    pure $ name <> tyStr
 
 instance Prettyprint LoopBinder where
-  pretty p (LoopBinder name mty initVal) =
-    let tyStr = case mty of
-          Just ty -> ": " <> fst (pretty p ty)
-          Nothing -> ""
-        initStr = " = " <> fst (pretty p initVal)
-     in (name <> tyStr <> initStr, p)
+  pretty (LoopBinder name mty initVal) = do
+    tyStr <- case mty of
+      Just ty -> do
+        tyStr' <- pretty ty
+        pure $ ": " <> tyStr'
+      Nothing -> pure ""
+    initStr <- do
+      initStr' <- pretty initVal
+      pure $ " = " <> initStr'
+    pure $ name <> tyStr <> initStr
 
 instance Prettyprint Expr where
-  pretty p (ELit lit) = pretty p lit
-  pretty p EUnit = ("()", p)
-  pretty p (EIdent name) = (name, p)
-  pretty p (EUnaryOp op expr) =
-    let (opStr, p') = pretty p op
-        (exprStr, p'') = pretty p' expr
-     in (opStr <> exprStr, p'')
-  pretty p (EBinOp op left right) =
-    let (leftStr, p') = pretty p left
-        (opStr, p'') = pretty p' op
-        (rightStr, p''') = pretty p'' right
-     in (leftStr <> " " <> opStr <> " " <> rightStr, p''')
-  pretty p (EList elems) =
-    let (elemsStr, p') = prettyPrintFoldable p elems
-     in ("[" <> intercalate ", " elemsStr <> "]", p')
-  pretty p (ETuple elems) =
-    let (elemsStr, p') = prettyPrintFoldable p elems
-     in ("(" <> intercalate ", " elemsStr <> ")", p')
-  pretty p (ELam params body) =
-    let (bodyStr, p') = pretty p body
-     in ("\\" <> unwords params <> " -> " <> bodyStr, p')
-  pretty p (EApp func arg) =
-    let (funcStr, p') = pretty p func
-        (argStr, p'') = pretty p' arg
-     in (funcStr <> " " <> argStr, p'')
-  pretty p (ELet binder val body) =
-    let (binderStr, p') = pretty p binder
-        (valStr, p'') = pretty p' val
-        (bodyStr, p''') = pretty p'' body
-     in ("let " <> binderStr <> " = " <> valStr <> " in " <> bodyStr, p''')
-  pretty p (EIf cond thenBranch elseBranch) =
-    let (condStr, p') = pretty p cond
-        (thenStr, p'') = pretty p' thenBranch
-        (elseStr, p''') = pretty p'' elseBranch
-     in ("if " <> condStr <> " then " <> thenStr <> " else " <> elseStr, p''')
-  pretty p (ELoop binders body) =
-    let (bindersStr, p') = prettyPrintFoldable p binders
-        (bodyStr, p'') = pretty p' body
-     in ("loop { " <> intercalate "; " bindersStr <> " } " <> bodyStr, p'')
-  pretty p _ = ("<expr>", p) -- Fallback for unhandled cases
+  pretty (ELit lit) = pretty lit
+  pretty EUnit = pure "()"
+  pretty (EIdent name) = pure name
+  pretty (EUnaryOp op expr) = do
+    opStr <- pretty op
+    exprStr <- pretty expr
+    pure $ opStr <> exprStr
+  pretty (EBinOp op left right) = do
+    leftStr <- pretty left
+    opStr <- pretty op
+    rightStr <- pretty right
+    pure $ leftStr <> " " <> opStr <> " " <> rightStr
+  pretty (EList elems) = do
+    elemsStr <- prettyPrintFoldable elems
+    pure $ "[" <> intercalate ", " elemsStr <> "]"
+  pretty (ETuple elems) = do
+    elemsStr <- prettyPrintFoldable elems
+    pure $ "(" <> intercalate ", " elemsStr <> ")"
+  pretty (ELam params body) = do
+    bodyStr <- pretty body
+    pure $ "\\" <> unwords params <> " -> " <> bodyStr
+  pretty (EApp func arg) = do
+    funcStr <- pretty func
+    argStr <- pretty arg
+    pure $ funcStr <> " " <> argStr
+  pretty (ELet binder val body) = do
+    binderStr <- pretty binder
+    valStr <- pretty val
+    bodyStr <- pretty body
+    pure $ "let " <> binderStr <> " = " <> valStr <> " in " <> bodyStr
+  pretty (EIf cond thenBranch elseBranch) = do
+    condStr <- pretty cond
+    thenStr <- pretty thenBranch
+    elseStr <- pretty elseBranch
+    pure $ "if " <> condStr <> " then " <> thenStr <> " else " <> elseStr
+  pretty (ELoop binders body) = do
+    bindersStr <- prettyPrintFoldable binders
+    bodyStr <- pretty body
+    pure $ "loop (" <> intercalate ", " bindersStr <> ")" <> "{" <> bodyStr <> "}"
+  pretty (ELetM binder val) = do
+    binderStr <- pretty binder
+    valStr <- pretty val
+    pure $ "let! " <> binderStr <> " = " <> valStr
+  pretty (EBind name val) = do
+    valStr <- pretty val
+    pure $ name <> " <- " <> valStr
+  pretty (EBlock exprs) = do
+    exprsStr <- prettyPrintFoldable exprs
+    pure $ "!{ " <> intercalate "; " exprsStr <> " }"
 
--- * Declarations
+-- -- * Declarations
 instance Prettyprint Decl where
-  pretty :: PrettyprintState -> Decl -> (String, PrettyprintState)
-  pretty p (DeclExpr expr) = pretty p expr
-  pretty p (DeclClass classDecl) = pretty p classDecl
-  pretty p (DeclImpl impl) = pretty p impl
+  pretty (DeclExpr expr) = pretty expr
+  pretty (DeclClass classDecl) = pretty classDecl
+  pretty (DeclImpl impl) = pretty impl
 
 instance Prettyprint TypeclassDecl where
   -- Pretty print a typeclass declaration:
   -- class Show[a] {
   --   fn show[a] : a -> String
   -- }
-  pretty p (TypeclassDecl name params methods') =
+  pretty (TypeclassDecl name params methods') = do
     let paramsStr = if null params then "" else "[" <> intercalate ", " params <> "]"
-        -- Increase indent for methods
-        pIndented = p{indentLevel = indentLevel p + 1}
-
-        -- Format each method on its own line with proper indentation
-        (methodsStr, p') = prettyPrintWith formatMethod pIndented methods'
-        formattedMethods = map ((indentsToSpaces pIndented <>) . (<> "\n")) methodsStr
-     in ( "class "
-            <> name
-            <> paramsStr
-            <> " { "
-            <> intercalate "\n" formattedMethods
-            <> " }"
-        , p'
-        )
-   where
-    formatMethod (methodName, methodParams, methodType) st =
-      -- Format method signature like: fn eq[a] : a -> a -> Bool
-      let (typeStr, st') = pretty st methodType
-          paramsStr =
-            if null
-              methodParams
-              then ""
-              else "[" <> intercalate ", " methodParams <> "]"
-       in ("fn " <> methodName <> paramsStr <> " -> " <> typeStr, st')
+    methodsStr <- withIndent $ do
+      indent <- getIndent
+      methodsStr <- forM methods' $ \(methodName, methodParams, methodType) -> do
+        typeStr <- pretty methodType
+        let paramsStr' =
+              if null methodParams
+                then ""
+                else "[" <> intercalate ", " methodParams <> "]"
+        pure $ indent <> "fn " <> methodName <> paramsStr' <> " -> " <> typeStr
+      pure $ intercalate "\n" methodsStr
+    baseIndent <- getIndent
+    pure $ "class " <> name <> paramsStr <> " {\n" <> methodsStr <> "\n" <> baseIndent <> "}"
 
 instance Prettyprint TypeclassImpl where
   -- Pretty print a typeclass implementation:
-  -- impl Show : Int {
-  --   fn show (x: Int) = ...
+  -- impl Show : MyType {
+  --  fn show (x: MyType) -> String = ..
   -- }
-  pretty p (TypeclassImpl className' implType' methods') = ("Not implemented yet", p)
+  pretty (TypeclassImpl cname ty methods') = do
+    tyStr <- pretty ty
+    methodsStr <- withIndent $ do
+      indent <- getIndent
+      methodsStr <- forM methods' $ \(methodName, methodExpr) -> do
+        methodExprStr <- pretty methodExpr
+        pure $ indent <> "fn " <> methodName <> " = " <> methodExprStr
+      pure $ intercalate "\n" methodsStr
+    baseIndent <- getIndent
+    pure $ "impl " <> cname <> " : " <> tyStr <> " {\n" <> methodsStr <> "\n" <> baseIndent <> "}"
 
-prettyPrint :: (Prettyprint p) => PrettyprintState -> p -> (String, PrettyprintState)
-prettyPrint = pretty
+-- Evaluate a single step of the pretty printer and return the resulting string
+evalPrettyPrint :: (Prettyprint a) => a -> String
+evalPrettyPrint item = evalState (pretty item) (PrettyprintState 0)
+
+-- Run the pretty printer and return the resulting string along with the final state
+runPrettyPrint :: (Prettyprint a) => a -> PrettyprintState -> (String, PrettyprintState)
+runPrettyPrint item = runState (pretty item)

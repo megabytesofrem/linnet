@@ -73,6 +73,8 @@ library
     build-depends:
         base ^>=4.18.3.0,
         megaparsec ^>=9.0.0,
+        containers,
+        mtl,
         parser-combinators
 
     -- Directories containing source files.
