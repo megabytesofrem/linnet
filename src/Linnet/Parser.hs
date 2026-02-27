@@ -34,15 +34,22 @@ lexeme = L.lexeme sc
 
 reserved :: [String]
 reserved =
-  [ "class"
+  [ "data"
+  , "class"
   , "impl"
+  , "fn"
   , "if"
   , "then"
   , "else"
   , "for"
+  , "loop"
+  , "match"
   , "let"
   , "in"
   ]
+
+isReserved :: String -> Bool
+isReserved k = k `elem` reserved
 
 -- | Parse something between parentheses, brackets, or braces.
 enclosed :: Char -> Char -> Parser a -> Parser a
@@ -54,7 +61,11 @@ symbol = L.symbol sc
 -- * Primitive parsers
 
 pIdent :: Parser String
-pIdent = lexeme ((:) <$> letterChar <*> many alphas')
+pIdent = lexeme $ try $ do
+  name <- (:) <$> letterChar <*> many alphas'
+  if isReserved name
+    then fail $ "Reserved keyword " ++ show name ++ " cannot be an identifier"
+    else pure name
  where
   -- Allow ' and _ in identifiers
   alphas' = letterChar <|> alphaNumChar <|> char '\'' <|> char '_'
