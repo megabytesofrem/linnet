@@ -3,17 +3,16 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Linnet.Parser
-  ( pLiteral,
-    pType,
-    pExpr,
+  ( pLiteral
+  , pType
+  , pExpr
   )
 where
 
--- AST
+import Linnet.AST
 
 import Control.Monad.Combinators.Expr
 import Data.Void (Void)
-import Linnet.AST
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import Text.Megaparsec.Char.Lexer qualified as L
@@ -33,6 +32,18 @@ sc =
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme sc
 
+reserved :: [String]
+reserved =
+  [ "class"
+  , "impl"
+  , "if"
+  , "then"
+  , "else"
+  , "for"
+  , "let"
+  , "in"
+  ]
+
 -- | Parse something between parentheses, brackets, or braces.
 enclosed :: Char -> Char -> Parser a -> Parser a
 enclosed open close = between (char open >> sc) (char close >> sc)
@@ -44,9 +55,9 @@ symbol = L.symbol sc
 
 pIdent :: Parser String
 pIdent = lexeme ((:) <$> letterChar <*> many alphas')
-  where
-    -- Allow ' and _ in identifiers
-    alphas' = letterChar <|> alphaNumChar <|> char '\'' <|> char '_'
+ where
+  -- Allow ' and _ in identifiers
+  alphas' = letterChar <|> alphaNumChar <|> char '\'' <|> char '_'
 
 -- Literals
 pInteger :: Parser Integer
@@ -61,11 +72,11 @@ pString = lexeme (char '"' >> manyTill L.charLiteral (char '"'))
 pLiteral :: Parser Literal
 pLiteral =
   choice
-    [ LitInt <$> pInteger, -- 42
-      LitFloat <$> pFloat, -- 3.14
-      LitString <$> pString, -- "string literals"
-      LitBool True <$ symbol "true",
-      LitBool False <$ symbol "false"
+    [ LitInt <$> pInteger -- 42
+    , LitFloat <$> pFloat -- 3.14
+    , LitString <$> pString -- "string literals"
+    , LitBool True <$ symbol "true"
+    , LitBool False <$ symbol "false"
     ]
 
 -- * Type parsers
@@ -73,16 +84,16 @@ pLiteral =
 pBaseTy :: Parser Ty
 pBaseTy =
   choice
-    [ TInt <$ symbol "Int",
-      TFloat <$ symbol "Float",
-      TBool <$ symbol "Bool",
-      TString <$ symbol "String",
-      TUnit <$ symbol "()",
-      TVar <$> pIdent,
-      parens pArrowTy
+    [ TInt <$ symbol "Int"
+    , TFloat <$ symbol "Float"
+    , TBool <$ symbol "Bool"
+    , TString <$ symbol "String"
+    , TUnit <$ symbol "()"
+    , TVar <$> pIdent
+    , parens pArrowTy
     ]
-  where
-    parens = enclosed '(' ')'
+ where
+  parens = enclosed '(' ')'
 
 -- Parse arrow types: Int -> Int, (a -> b)
 pArrowTy :: Parser Ty
@@ -136,51 +147,51 @@ pIf = do
 pTerm :: Parser Expr
 pTerm =
   choice
-    [ parenExprOrTuple,
-      pList,
-      pLambda,
-      pIf,
-      ELit <$> pLiteral,
-      EIdent <$> pIdent
+    [ pIf
+    , parenExprOrTuple
+    , pList
+    , pLambda
+    , ELit <$> pLiteral
+    , EIdent <$> pIdent
     ]
-  where
-    parenExprOrTuple = enclosed '(' ')' $ do
-      exprs <- sepBy pExpr (symbol ",")
-      pure $ case exprs of
-        [] -> EUnit -- () is the unit value
-        [e] -> e -- Just a parenthesized expression
-        es -> ETuple es -- A tuple
+ where
+  parenExprOrTuple = enclosed '(' ')' $ do
+    exprs <- sepBy pExpr (symbol ",")
+    pure $ case exprs of
+      [] -> EUnit -- () is the unit value
+      [e] -> e -- Just a parenthesized expression
+      es -> ETuple es -- A tuple
 
 -- Higher in the list = higher precedence.
 operatorTable :: [[Operator Parser Expr]]
 operatorTable =
-  [ [prefix "-" (EUnaryOp Negate)],
-    -- Left-associative binary operators
-    [binary "*" (EBinOp Mul) AssocLeft],
-    [binary "/" (EBinOp Div) AssocLeft],
-    [binary "+" (EBinOp Add) AssocLeft],
-    [binary "-" (EBinOp Sub) AssocLeft],
-    [binary "==" (EBinOp Eq) AssocNone],
-    [binary "/=" (EBinOp Neq) AssocNone],
-    [binary "<" (EBinOp Lt) AssocNone],
-    [binary ">" (EBinOp Gt) AssocNone],
-    [binary "<=" (EBinOp LtEq) AssocNone],
-    [binary ">=" (EBinOp GtEq) AssocNone],
-    -- Functional operators
-    [binary "." (EBinOp Compose) AssocRight],
-    [binary "$" (EBinOp Apply) AssocRight],
-    [binary ">>=" (EBinOp Bind) AssocLeft],
-    [binary ">>" (EBinOp Pipe) AssocLeft],
-    [binary "<$>" (EBinOp Map) AssocLeft],
-    [binary "<*>" (EBinOp UFO) AssocLeft],
-    [binary "<|>" (EBinOp Alt) AssocLeft]
+  [ [prefix "-" (EUnaryOp Negate)]
+  , -- Left-associative binary operators
+    [binary "*" (EBinOp Mul) AssocLeft]
+  , [binary "/" (EBinOp Div) AssocLeft]
+  , [binary "+" (EBinOp Add) AssocLeft]
+  , [binary "-" (EBinOp Sub) AssocLeft]
+  , [binary "==" (EBinOp Eq) AssocNone]
+  , [binary "/=" (EBinOp Neq) AssocNone]
+  , [binary "<" (EBinOp Lt) AssocNone]
+  , [binary ">" (EBinOp Gt) AssocNone]
+  , [binary "<=" (EBinOp LtEq) AssocNone]
+  , [binary ">=" (EBinOp GtEq) AssocNone]
+  , -- Functional operators
+    [binary "." (EBinOp Compose) AssocRight]
+  , [binary "$" (EBinOp Apply) AssocRight]
+  , [binary ">>=" (EBinOp Bind) AssocLeft]
+  , [binary ">>" (EBinOp Pipe) AssocLeft]
+  , [binary "<$>" (EBinOp Map) AssocLeft]
+  , [binary "<*>" (EBinOp UFO) AssocLeft]
+  , [binary "<|>" (EBinOp Alt) AssocLeft]
   ]
-  where
-    prefix sym f = Prefix (f <$ symbol sym)
-    binary sym f assoc = case assoc of
-      AssocLeft -> InfixL (f <$ symbol sym)
-      AssocRight -> InfixR (f <$ symbol sym)
-      AssocNone -> InfixN (f <$ symbol sym)
+ where
+  prefix sym f = Prefix (f <$ symbol sym)
+  binary sym f assoc = case assoc of
+    AssocLeft -> InfixL (f <$ symbol sym)
+    AssocRight -> InfixR (f <$ symbol sym)
+    AssocNone -> InfixN (f <$ symbol sym)
 
 pExpr :: Parser Expr
 pExpr = makeExprParser pApp operatorTable

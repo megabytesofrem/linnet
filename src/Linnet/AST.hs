@@ -1,16 +1,16 @@
 module Linnet.AST
-  ( Ty (..),
-    Associativity (..),
+  ( Ty (..)
+  , Associativity (..)
 
     -- * AST
-    UnaryOp (..),
-    BinOp (..),
-    Literal (..),
-    Expr (..),
+  , UnaryOp (..)
+  , BinOp (..)
+  , Literal (..)
+  , Expr (..)
 
     -- * Binders
-    Binder (..),
-    LoopBinder (..),
+  , Binder (..)
+  , LoopBinder (..)
   )
 where
 
