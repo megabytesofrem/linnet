@@ -1,5 +1,3 @@
-{-# LANGUAGE InstanceSigs #-}
-
 module Linnet.Prettyprint where
 
 import Control.Monad (forM)
@@ -174,7 +172,8 @@ instance Prettyprint Decl where
   pretty (ExprDeclaration expr) = pretty expr
   pretty (ClassDeclaration classDecl) = pretty classDecl
   pretty (ClassImplementation impl) = pretty impl
-  pretty (DataDeclaration name params constructors) = pure ""
+  pretty (DataDeclaration name params constructors) = pure "Not implemented yet"
+  pretty (FunctionDeclaration funcDecl) = pure "Not implemented yet"
 
 instance Prettyprint TypeclassDeclaration where
   -- Pretty print a typeclass declaration:

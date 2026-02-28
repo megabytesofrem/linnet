@@ -10,6 +10,7 @@ module Linnet.AST.Declarations
   , Decl (..)
   , TypeclassDeclaration (..)
   , TypeclassImplementation (..)
+  , FunctionDeclaration (..)
 
     -- * Binders
   , Binder (..)
@@ -38,6 +39,7 @@ data Literal
   | LitString String
   deriving (Show, Eq)
 
+-- Binder used for let-bindings and function parameter types
 data Binder = Binder String (Maybe Ty)
   deriving (Show, Eq)
 
@@ -67,6 +69,9 @@ data Expr
   deriving (Show, Eq)
 {- FOURMOLU_ENABLE -}
 
+----------------------------------------
+-- Declarations
+
 type DataTypeConstructors = [(String, [Ty])]
 
 data TypeclassDeclaration = TypeclassDecl
@@ -83,8 +88,17 @@ data TypeclassImplementation = TypeclassImpl
   }
   deriving (Show, Eq)
 
+data FunctionDeclaration = FunctionDecl
+  { funcName :: String
+  , funcParams :: [Binder]
+  , funcReturnType :: Maybe Ty
+  , funcBody :: Expr
+  }
+  deriving (Show, Eq)
+
 data Decl
   = ExprDeclaration Expr
+  | FunctionDeclaration FunctionDeclaration
   | DataDeclaration String [String] DataTypeConstructors
   | ClassDeclaration TypeclassDeclaration
   | ClassImplementation TypeclassImplementation

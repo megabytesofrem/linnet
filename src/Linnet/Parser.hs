@@ -2,10 +2,13 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
 
+-- Convention: Internal parsers are prefixed with p, and exported parsers are given
+-- canonical names like parseExpr, parseDecl, etc.
 module Linnet.Parser
   ( pLiteral
   , pType
-  , pExpr
+  , parseExpr
+  , parseDecl
   )
 where
 
@@ -36,10 +39,11 @@ lexeme = L.lexeme sc
 
 reserved :: [String]
 reserved =
-  [ "data"
+  [ "forall"
+  , "data"
   , "class"
   , "impl"
-  , "fn"
+  , "def"
   , "if"
   , "then"
   , "else"
@@ -66,7 +70,8 @@ sepByTokenOrEOL p sep = sepEndBy1 p (symbol sep <|> eol)
 symbol :: String -> Parser String
 symbol = L.symbol sc
 
--- * Primitive parsers
+----------------------------------------
+-- Primitive parsers
 
 pIdent :: Parser String
 pIdent = lexeme $ try $ do
@@ -134,11 +139,18 @@ pType = do
       TVar name -> TCons name ps
       _ -> error "Type constructor must be a type variable"
 
--- * Expression parser
+pBinder :: Parser Binder
+pBinder = do
+  name <- pIdent
+  ty <- optional (symbol ":" >> pType)
+  pure $ Binder name ty
+
+----------------------------------------
+-- Expression parser
 
 -- Lists and tuples: [1, 2, 3], (1, 2, 3)
 pList :: Parser Expr
-pList = enclosed '[' ']' (EList <$> sepBy pExpr (symbol ","))
+pList = enclosed '[' ']' (EList <$> sepBy parseExpr (symbol ","))
 
 pApp :: Parser Expr
 pApp = do
@@ -151,7 +163,7 @@ pLambda = do
   _ <- symbol "\\"
   binders <- some pIdent
   _ <- symbol "->"
-  ELam binders <$> pExpr
+  ELam binders <$> parseExpr
 
 pLet :: Parser Expr
 pLet = do
@@ -159,24 +171,24 @@ pLet = do
   name <- pIdent
   ty <- optional (symbol ":" >> pType)
   _ <- symbol "="
-  val <- pExpr
+  val <- parseExpr
   _ <- symbol "in"
-  ELet (Binder name ty) val <$> pExpr
+  ELet (Binder name ty) val <$> parseExpr
 
 pIf :: Parser Expr
 pIf = do
   _ <- symbol "if"
-  cond <- pExpr
+  cond <- parseExpr
   _ <- symbol "then"
-  thenBranch <- pExpr
+  thenBranch <- parseExpr
   _ <- symbol "else"
-  EIf cond thenBranch <$> pExpr
+  EIf cond thenBranch <$> parseExpr
 
 pLoop :: Parser Expr
 pLoop = do
   _ <- symbol "loop"
   binders <- many parseBinder
-  symbol "{" >> ELoop binders <$> pExpr <* symbol "}"
+  symbol "{" >> ELoop binders <$> parseExpr <* symbol "}"
  where
   defaultValue ty = case ty of
     Just TInt -> ELit (LitInt 0)
@@ -189,7 +201,7 @@ pLoop = do
   parseBinder = do
     name <- pIdent
     ty <- optional (symbol ":" >> pType)
-    val <- optional (symbol "=" >> pExpr)
+    val <- optional (symbol "=" >> parseExpr)
     pure $ LoopBinder name ty (fromMaybe (defaultValue ty) val)
 
 -- Parse a monadic binding: x <- m
@@ -197,7 +209,7 @@ pMonadBind :: Parser Expr
 pMonadBind = do
   ident <- pIdent
   _ <- symbol "<-"
-  EBind ident <$> pExpr
+  EBind ident <$> parseExpr
 
 pMonadLet :: Parser Expr
 pMonadLet = do
@@ -205,7 +217,7 @@ pMonadLet = do
   ident <- pIdent
   ty <- optional (symbol ":" >> pType)
   _ <- symbol "<-"
-  ELetM (Binder ident ty) <$> pExpr
+  ELetM (Binder ident ty) <$> parseExpr
 
 -- NOTE: Do notation for monads e.g do ... end
 pMonadDo :: Parser Expr
@@ -214,7 +226,7 @@ pMonadDo = do
   pure $ EBlock exprs
  where
   -- A valid expression in a monadic block can be a let!, bind, or a regular expression
-  validExpr = pMonadLet <|> pMonadBind <|> pExpr
+  validExpr = pMonadLet <|> pMonadBind <|> parseExpr
 
 -- Term parser
 pTerm :: Parser Expr
@@ -233,7 +245,7 @@ pTerm =
     ]
  where
   parenExprOrTuple = enclosed '(' ')' $ do
-    exprs <- sepBy pExpr (symbol ",")
+    exprs <- sepBy parseExpr (symbol ",")
     pure $ case exprs of
       [] -> EUnit -- () is the unit value
       [e] -> e -- Just a parenthesized expression
@@ -270,7 +282,111 @@ operatorTable =
     AssocRight -> InfixR (f <$ symbol sym)
     AssocNone -> InfixN (f <$ symbol sym)
 
-pExpr :: Parser Expr
-pExpr = makeExprParser pApp operatorTable
+parseExpr :: Parser Expr
+parseExpr = makeExprParser pApp operatorTable
 
--- * Declaration parsers
+----------------------------------------
+--  Declaration parsers
+
+-- Parse a valid data constructor in the format of either:
+--   - ConstructorName T T' ...
+--   - ConstructorName (T, T', ...)
+--   - ConstructorName { field1: T, field2: T', ... }
+
+pDataTupleConstructor :: Parser (String, [Ty])
+pDataTupleConstructor = do
+  name <- pIdent
+  tys <- enclosed '(' ')' (sepBy pType (symbol ","))
+  pure (name, tys)
+
+pDataTypedConstructor :: Parser (String, [Ty])
+pDataTypedConstructor = do
+  name <- pIdent
+  tys <- some pType
+  pure (name, tys)
+
+pDataConstructor :: Parser (String, [Ty])
+pDataConstructor = try pDataTupleConstructor <|> pDataTypedConstructor
+
+pDataDeclaration :: Parser Decl
+pDataDeclaration = do
+  _ <- symbol "data"
+  typeName <- pIdent
+  typeParams' <- many pIdent
+  constructors <- many pDataConstructor
+  pure $ DataDeclaration typeName typeParams' constructors
+
+pFunctionSignature :: Parser (String, [Binder], Maybe Ty)
+pFunctionSignature = do
+  -- name : a -> b -> c
+  name <- pIdent
+  _ <- symbol ":"
+  ty <- pType
+  pure (name, [], Just ty) -- Fill this in when parsing the full declaration
+
+pFunctionDeclaration :: Parser Decl
+pFunctionDeclaration = do
+  -- name : a -> b -> c
+  -- def name x y = expr
+  (name, _params, mty) <- pFunctionSignature
+  _ <- symbol "def"
+  _ <- symbol name -- Ensure the function name is repeated in the definition
+  paramBinders <- many pBinder
+  _ <- symbol "="
+  body <- parseExpr
+
+  -- Convert parameters into a lambda
+  let paramNames = map (\(Binder n _) -> n) paramBinders
+      lambdaBody = foldr (\pname acc -> ELam [pname] acc) body paramNames
+  pure $
+    FunctionDeclaration
+      (FunctionDecl name paramBinders mty lambdaBody)
+pClassDeclaration :: Parser Decl
+pClassDeclaration = do
+  -- class ClassName a b where
+  --   method1 : a -> b
+  --   method2 : a -> a
+
+  _ <- symbol "class"
+  className' <- pIdent
+  typeParams' <- many pIdent
+  _ <- symbol "where"
+  methods' <- many parseMethod
+  pure $ ClassDeclaration (TypeclassDecl className' typeParams' methods')
+ where
+  parseMethod = do
+    methodName <- pIdent
+    _ <- symbol ":"
+    methodType <- pType
+    pure (methodName, [], methodType) -- No method type parameters for now
+
+pClassImplementation :: Parser Decl
+pClassImplementation = do
+  -- impl ClassName MyType where
+  --   def method1 a b = ...
+  --   def method2 a b = ...
+
+  _ <- symbol "impl"
+  className' <- pIdent
+  _ <- symbol ":"
+  ty <- pType
+  _ <- symbol "where"
+  methods' <- many parseMethodImpl
+  pure $ ClassImplementation (TypeclassImpl className' ty methods')
+ where
+  parseMethodImpl = do
+    _ <- symbol "def"
+    methodName <- pIdent
+    methodExpr <- parseExpr
+    pure (methodName, methodExpr)
+
+parseDecl :: Parser Decl
+parseDecl =
+  choice
+    [ try pFunctionDeclaration
+    , try pDataDeclaration
+    , try pClassDeclaration
+    , try pClassImplementation
+    , -- Fallback to parsing an expression declaration
+      ExprDeclaration <$> parseExpr
+    ]

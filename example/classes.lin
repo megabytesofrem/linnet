@@ -1,0 +1,13 @@
+class Aww a where
+  aww : a -> String
+
+data Dog = Puppy String
+data Cat = Kitten String
+
+// Typeclass impl
+impl Aww Dog where
+  def aww (Puppy name) = "Aww! Puppy " ++ name
+
+impl Aww Cat where
+  def aww (Kitten name) = "Aww! Kitten " ++ name
+

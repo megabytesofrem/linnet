@@ -3,7 +3,7 @@ module ParserTests (parserTests) where
 import Linnet.AST.Declarations
 import Linnet.AST.Operators
 
-import Linnet.Parser (pExpr, pLiteral, pType)
+import Linnet.Parser (pLiteral, pType, parseDecl, parseExpr)
 import Test.Tasty
 import Test.Tasty.HUnit
 import Text.Megaparsec (Parsec, Stream, parseMaybe)
@@ -32,35 +32,35 @@ exprTests =
   testGroup
     "Expression Tests"
     [ testCase "parse identifier" $
-        parses pExpr "x" @?= Just (EIdent "x")
+        parses parseExpr "x" @?= Just (EIdent "x")
     , testCase "parse unit: ()" $
-        parses pExpr "()" @?= Just EUnit
+        parses parseExpr "()" @?= Just EUnit
     , testCase "parse simple addition" $
-        parses pExpr "1 + 2"
+        parses parseExpr "1 + 2"
           @?= Just (EBinOp Add (ELit (LitInt 1)) (ELit (LitInt 2)))
     , testCase "parse nested expressions" $
-        parses pExpr "1 + 2 * 3"
+        parses parseExpr "1 + 2 * 3"
           @?= Just (EBinOp Add (ELit (LitInt 1)) (EBinOp Mul (ELit (LitInt 2)) (ELit (LitInt 3))))
     , testCase "parse parentheses" $
-        parses pExpr "(1 + 2) * 3"
+        parses parseExpr "(1 + 2) * 3"
           @?= Just (EBinOp Mul (EBinOp Add (ELit (LitInt 1)) (ELit (LitInt 2))) (ELit (LitInt 3)))
     , testCase "parse list expression: [1, 2, 3]" $
-        parses pExpr "[1, 2, 3]"
+        parses parseExpr "[1, 2, 3]"
           @?= Just (EList [ELit (LitInt 1), ELit (LitInt 2), ELit (LitInt 3)])
     , testCase "parse tuple expression: (1, 2, 3)" $
-        parses pExpr "(1, 2, 3)"
+        parses parseExpr "(1, 2, 3)"
           @?= Just (ETuple [ELit (LitInt 1), ELit (LitInt 2), ELit (LitInt 3)])
     , testCase "parse lambda expression: \\x -> x" $
-        parses pExpr "\\x -> x"
+        parses parseExpr "\\x -> x"
           @?= Just (ELam ["x"] (EIdent "x"))
     , testCase "parse lambda expression: \\x y -> x + y" $
-        parses pExpr "\\x y -> x + y"
+        parses parseExpr "\\x y -> x + y"
           @?= Just (ELam ["x", "y"] (EBinOp Add (EIdent "x") (EIdent "y")))
     , testCase "parse let expression: let x = 1 in x + 2" $
-        parses pExpr "let x = 1 in x + 2"
+        parses parseExpr "let x = 1 in x + 2"
           @?= Just (ELet (Binder "x" Nothing) (ELit (LitInt 1)) (EBinOp Add (EIdent "x") (ELit (LitInt 2))))
     , testCase "parse if expression: if x then y else z" $
-        parses pExpr "if x then y else z"
+        parses parseExpr "if x then y else z"
           @?= Just (EIf (EIdent "x") (EIdent "y") (EIdent "z"))
     ]
 
@@ -86,6 +86,17 @@ typeTests =
         parses pType "(Int -> Int) -> Int" @?= Just (TFn (TFn TInt TInt) TInt)
     ]
 
+declTests :: TestTree
+declTests =
+  testGroup
+    "Declaration Tests"
+    [ testCase "parse expression declaration: 1 + 2" $
+        parses parseDecl "1 + 2" @?= Just (ExprDeclaration (EBinOp Add (ELit (LitInt 1)) (ELit (LitInt 2))))
+    , testCase "parse function declaration: name : a -> a; def name x = x" $
+        parses parseDecl "name : a -> a\ndef name x = x"
+          @?= Just (FunctionDeclaration (FunctionDecl "name" [Binder "x" Nothing] (Just (TFn (TVar "a") (TVar "a"))) (ELam ["x"] (EIdent "x"))))
+    ]
+
 parserTests :: TestTree
 parserTests =
   testGroup
@@ -93,4 +104,5 @@ parserTests =
     [ literalTests
     , exprTests
     , typeTests
+    , declTests
     ]
