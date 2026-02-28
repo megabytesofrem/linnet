@@ -58,8 +58,10 @@ library
     import:           warnings
 
     -- Modules exported by the library.
-    exposed-modules:  
+    exposed-modules:
         Linnet.AST,
+        Linnet.AST.Declarations,
+        Linnet.AST.Operators,
         Linnet.Parser,
         Linnet.Prettyprint
 

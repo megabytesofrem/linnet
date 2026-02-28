@@ -1,6 +1,8 @@
 module ParserTests (parserTests) where
 
-import Linnet.AST
+import Linnet.AST.Declarations
+import Linnet.AST.Operators
+
 import Linnet.Parser (pExpr, pLiteral, pType)
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -70,10 +72,12 @@ typeTests =
         parses pType "Int" @?= Just TInt
     , testCase "parse type variable: a" $
         parses pType "a" @?= Just (TVar "a")
-    , testCase "parse type constructor: Maybe[Int]" $
-        parses pType "Maybe[Int]" @?= Just (TCons "Maybe" [TInt])
-    , testCase "parse type constructor: Maybe[a]" $
-        parses pType "Maybe[a]" @?= Just (TCons "Maybe" [TVar "a"])
+    , testCase "parse type constructor: Maybe Int" $
+        parses pType "Maybe Int" @?= Just (TCons "Maybe" [TInt])
+    , testCase "parse type constructor: Maybe a" $
+        parses pType "Maybe a" @?= Just (TCons "Maybe" [TVar "a"])
+    , testCase "parse type constructor: Either String Int" $
+        parses pType "Either String Int" @?= Just (TCons "Either" [TString, TInt])
     , testCase "parse arrow type: Int -> Int" $
         parses pType "Int -> Int" @?= Just (TFn TInt TInt)
     , testCase "parse arrow type: a -> b" $

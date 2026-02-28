@@ -1,0 +1,9 @@
+ask_then_print : Unit -> IO[Unit]
+
+fn ask_then_print () = do
+    input <- read_line
+    print input
+end
+
+calc_sum : Int -> Int -> Int
+fn calc_sum x y = x + y

@@ -9,7 +9,8 @@ module Linnet.Parser
   )
 where
 
-import Linnet.AST
+import Linnet.AST.Declarations
+import Linnet.AST.Operators
 
 import Control.Monad.Combinators.Expr
 import Data.Maybe (fromMaybe)
@@ -54,7 +55,10 @@ isReserved k = k `elem` reserved
 
 -- | Parse something between parentheses, brackets, or braces.
 enclosed :: Char -> Char -> Parser a -> Parser a
-enclosed open close = between (char open >> sc) (char close >> sc)
+enclosed open close = between (symbol [open] >> sc) (symbol [close] >> sc)
+
+enclosedStr :: String -> String -> Parser a -> Parser a
+enclosedStr open close = between (symbol open >> sc) (symbol close >> sc)
 
 sepByTokenOrEOL :: Parser a -> String -> Parser [a]
 sepByTokenOrEOL p sep = sepEndBy1 p (symbol sep <|> eol)
@@ -123,12 +127,12 @@ pArrowTy = do
 pType :: Parser Ty
 pType = do
   base <- pArrowTy
-  pars <- optional $ enclosed '[' ']' (sepBy pType (symbol ","))
+  pars <- many pBaseTy
   pure $ case pars of
-    Just ps -> case base of
+    [] -> base
+    ps -> case base of
       TVar name -> TCons name ps
       _ -> error "Type constructor must be a type variable"
-    Nothing -> base
 
 -- * Expression parser
 
@@ -200,15 +204,13 @@ pMonadLet = do
   _ <- symbol "let!"
   ident <- pIdent
   ty <- optional (symbol ":" >> pType)
-  _ <- symbol "="
+  _ <- symbol "<-"
   ELetM (Binder ident ty) <$> pExpr
 
--- NOTE: Blocks are monadic sequencing, essentially do-notation
--- They are not blocks in the imperative sense, since Linnet is purely functional.
-pMonadBlock :: Parser Expr
-pMonadBlock = do
-  _ <- symbol "!"
-  exprs <- enclosed '{' '}' (sepByTokenOrEOL validExpr ";")
+-- NOTE: Do notation for monads e.g do ... end
+pMonadDo :: Parser Expr
+pMonadDo = do
+  exprs <- enclosedStr "do" "end" (sepByTokenOrEOL validExpr ";")
   pure $ EBlock exprs
  where
   -- A valid expression in a monadic block can be a let!, bind, or a regular expression
@@ -219,7 +221,7 @@ pTerm :: Parser Expr
 pTerm =
   choice
     [ -- Parse monadic blocks first to allow let! and bind syntax inside them
-      pMonadBlock
+      pMonadDo
     , pLet
     , pIf
     , pLoop
@@ -270,3 +272,5 @@ operatorTable =
 
 pExpr :: Parser Expr
 pExpr = makeExprParser pApp operatorTable
+
+-- * Declaration parsers

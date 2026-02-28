@@ -5,7 +5,8 @@ module Linnet.Prettyprint where
 import Control.Monad (forM)
 import Control.Monad.State
 import Data.List (intercalate)
-import Linnet.AST
+import Linnet.AST.Declarations
+import Linnet.AST.Operators
 
 -- State for the pretty printer
 newtype PrettyprintState = PrettyprintState
@@ -170,11 +171,12 @@ instance Prettyprint Expr where
 
 -- -- * Declarations
 instance Prettyprint Decl where
-  pretty (DeclExpr expr) = pretty expr
-  pretty (DeclClass classDecl) = pretty classDecl
-  pretty (DeclImpl impl) = pretty impl
+  pretty (ExprDeclaration expr) = pretty expr
+  pretty (ClassDeclaration classDecl) = pretty classDecl
+  pretty (ClassImplementation impl) = pretty impl
+  pretty (DataDeclaration name params constructors) = pure ""
 
-instance Prettyprint TypeclassDecl where
+instance Prettyprint TypeclassDeclaration where
   -- Pretty print a typeclass declaration:
   -- class Show[a] {
   --   fn show[a] : a -> String
@@ -194,7 +196,7 @@ instance Prettyprint TypeclassDecl where
     baseIndent <- getIndent
     pure $ "class " <> name <> paramsStr <> " {\n" <> methodsStr <> "\n" <> baseIndent <> "}"
 
-instance Prettyprint TypeclassImpl where
+instance Prettyprint TypeclassImplementation where
   -- Pretty print a typeclass implementation:
   -- impl Show : MyType {
   --  fn show (x: MyType) -> String = ..
