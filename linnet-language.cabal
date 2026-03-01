@@ -82,12 +82,15 @@ library
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
+    -- NOTE: Later on use cabal gen-bounds
     build-depends:
         base ^>=4.18.3.0,
-        megaparsec ^>=9.0.0,
         containers,
+        lens,
+        transformers,
         mtl,
-        parser-combinators
+        megaparsec,
+        parser-combinators,
 
     -- Directories containing source files.
     hs-source-dirs:   src

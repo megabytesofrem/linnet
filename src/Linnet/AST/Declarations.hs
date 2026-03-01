@@ -1,3 +1,5 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module Linnet.AST.Declarations
   ( Ty (..)
 
@@ -15,6 +17,7 @@ module Linnet.AST.Declarations
   )
 where
 
+import Control.Lens.TH (makeLenses)
 import Linnet.AST.Operators (BinOp, UnaryOp)
 
 data Ty
@@ -78,12 +81,16 @@ data TypeclassDeclaration = TypeclassDecl
   }
   deriving (Show, Eq)
 
+makeLenses ''TypeclassDeclaration
+
 data TypeclassImplementation = TypeclassImpl
   { className :: String
   , implType :: Ty
   , methods :: [(String, Expr)]
   }
   deriving (Show, Eq)
+
+makeLenses ''TypeclassImplementation
 
 data FunctionDeclaration = FunctionDecl
   { funcName :: String
@@ -92,6 +99,8 @@ data FunctionDeclaration = FunctionDecl
   , funcBody :: Expr
   }
   deriving (Show, Eq)
+
+makeLenses ''FunctionDeclaration
 
 data Decl
   = ExprDeclaration Expr
