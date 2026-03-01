@@ -1,9 +1,24 @@
-ask_then_print : Unit -> IO[Unit]
-
-fn ask_then_print () = do
+ask_then_print : IO ()
+def ask_then_print = do
     input <- read_line
     print input
 end
 
 calc_sum : Int -> Int -> Int
-fn calc_sum x y = x + y
+def calc_sum x y = x + y
+
+// Lists and record types
+data Movie = Movie
+  { movieName  : String
+  , movieGenre : String
+  , movieYear  : Int
+  }
+
+movies : [Movies]
+def movies = 
+  [ Movie "The Matrix" "Scifi" 1999
+  , Movie "Shrek" "Animation" 2002
+  ]
+
+printList : forall a. [a] -> IO ()
+def printList itms = mapM print itms

@@ -10,6 +10,7 @@ where
 
 import Linnet.AST.Declarations
 import Linnet.AST.Operators
+import Linnet.AST.Pattern (Pat (..))
 
 import Control.Monad.Combinators.Expr
 import Data.Maybe (fromMaybe)
@@ -46,8 +47,14 @@ reserved =
   , "for"
   , "loop"
   , "match"
+  , "with"
   , "let"
+  , "let!"
   , "in"
+  , "do"
+  , "end"
+  , "true"
+  , "false"
   ]
 
 isReserved :: String -> Bool
@@ -78,6 +85,15 @@ pIdent = lexeme $ try $ do
  where
   -- Allow ' and _ in identifiers
   alphas' = letterChar <|> alphaNumChar <|> char '\'' <|> char '_'
+
+pCtorIdent :: Parser String
+pCtorIdent = lexeme $ try $ do
+  c <- upperChar
+  cs <- many (alphaNumChar <|> char '_' <|> char '\'')
+  let name = c : cs
+  if isReserved name
+    then fail $ "Reserved keyword " ++ show name ++ " cannot be a constructor"
+    else pure name
 
 -- Literals
 pInteger :: Parser Integer
@@ -180,6 +196,21 @@ pIf = do
   _ <- symbol "else"
   EIf cond thenBranch <$> parseExpr
 
+pMatchBranch :: Parser (Pat, Expr)
+pMatchBranch = do
+  _ <- symbol "|"
+  pat <- pPattern
+  _ <- symbol "->"
+  (pat,) <$> parseExpr
+
+pMatch :: Parser Expr
+pMatch = do
+  _ <- symbol "match"
+  expr <- parseExpr
+  _ <- symbol "with"
+  branches <- some pMatchBranch
+  pure $ EMatch expr branches
+
 pLoop :: Parser Expr
 pLoop = do
   _ <- symbol "loop"
@@ -232,6 +263,7 @@ pTerm =
       pMonadDo
     , pLet
     , pIf
+    , pMatch
     , pLoop
     , parenExprOrTuple
     , pList
@@ -282,34 +314,107 @@ parseExpr :: Parser Expr
 parseExpr = makeExprParser pApp operatorTable
 
 ----------------------------------------
+-- Pattern parser
+
+pConsPattern :: Parser Pat
+pConsPattern = do
+  name <- pCtorIdent
+  pats <- many pPattern
+  pure $ PCons name pats
+
+pTuplePattern :: Parser Pat
+pTuplePattern = enclosed '(' ')' $ do
+  -- (x, y)
+  pats <- sepBy pPattern (symbol ",")
+  pure $ case pats of
+    [p] -> p -- Just a parenthesized pattern
+    ps -> PTuple ps -- A tuple pattern
+
+pListPattern :: Parser Pat
+pListPattern = enclosed '[' ']' $ do
+  -- [x, y, z]
+  pats <- sepBy pPattern (symbol ",")
+  pure $ PList pats
+
+pPartitionPattern :: Parser Pat
+pPartitionPattern = enclosed '(' ')' $ do
+  -- (x::xs)
+  name <- pIdent <|> symbol "_"
+  _ <- symbol "::"
+  PPartition name <$> pPattern
+
+pWildcardPattern :: Parser Pat
+pWildcardPattern = PWildcard <$ symbol "_"
+
+pPattern :: Parser Pat
+pPattern =
+  choice
+    [ PLit <$> pLiteral
+    , try pConsPattern
+    , PVar <$> pIdent
+    , try pPartitionPattern
+    , try pTuplePattern
+    , try pListPattern
+    , pWildcardPattern
+    ]
+
+----------------------------------------
 --  Declaration parsers
 
 -- Parse a valid data constructor in the format of either:
---   - ConstructorName T T' ...
---   - ConstructorName (T, T', ...)
---   - ConstructorName { field1: T, field2: T', ... }
+--   - Nullary: ConstructorName T
+--   - Some: ConstructorName T T' ...
+--   - Tuple: ConstructorName (T, T', ...)
+--   - Record: ConstructorName { field1: T, field2: T', ... }
+
+pDataNullaryConstructor :: Parser (String, [Ty])
+pDataNullaryConstructor = do
+  name <- pCtorIdent
+  pure (name, [])
 
 pDataTupleConstructor :: Parser (String, [Ty])
 pDataTupleConstructor = do
-  name <- pIdent
+  name <- pCtorIdent
   tys <- enclosed '(' ')' (sepBy pType (symbol ","))
   pure (name, tys)
 
 pDataTypedConstructor :: Parser (String, [Ty])
 pDataTypedConstructor = do
-  name <- pIdent
-  tys <- some pType
+  name <- pCtorIdent
+  tys <- some pBaseTy
   pure (name, tys)
 
+pDataRecordConstructor :: Parser (String, [Ty])
+pDataRecordConstructor = do
+  -- TODO: Preserve field names
+  name <- pCtorIdent
+  fields <- enclosed '{' '}' (sepBy parseField (symbol ","))
+  let tys = map snd fields
+  pure (name, tys)
+ where
+  parseField = do
+    fieldName <- pIdent
+    _ <- symbol ":"
+    fieldType <- pType
+    pure (fieldName, fieldType)
+
+-- Product constructors
 pDataConstructor :: Parser (String, [Ty])
-pDataConstructor = try pDataTupleConstructor <|> pDataTypedConstructor
+pDataConstructor =
+  choice
+    [ try pDataTupleConstructor
+    , try pDataTypedConstructor
+    , try pDataRecordConstructor
+    , pDataNullaryConstructor
+    ]
 
 pDataDeclaration :: Parser Decl
 pDataDeclaration = do
   _ <- symbol "data"
-  typeName <- pIdent
+  typeName <- pCtorIdent
   typeParams' <- many pIdent
-  constructors <- many pDataConstructor
+  _ <- symbol "="
+  constructors <- pDataConstructor `sepBy1` symbol "|"
   pure $ DataDeclaration typeName typeParams' constructors
 
 pFunctionSignature :: Parser (String, [Binder], Maybe Ty)
@@ -337,6 +442,7 @@ pFunctionDeclaration = do
   pure $
     FunctionDeclaration
       (FunctionDecl name paramBinders mty lambdaBody)
+
 pClassDeclaration :: Parser Decl
 pClassDeclaration = do
   -- class ClassName a b where
@@ -344,7 +450,7 @@ pClassDeclaration = do
   --   method2 : a -> a
 
   _ <- symbol "class"
-  className' <- pIdent
+  className' <- pCtorIdent
   typeParams' <- many pIdent
   _ <- symbol "where"
   methods' <- many parseMethod
@@ -363,7 +469,7 @@ pClassImplementation = do
   --   def method2 a b = ...
 
   _ <- symbol "impl"
-  className' <- pIdent
+  className' <- pCtorIdent
   _ <- symbol ":"
   ty <- pType
   _ <- symbol "where"

@@ -1,0 +1,18 @@
+data Thingy = Thingy Int
+
+data DogBreed =
+    Labrador
+  | GoldenRetriever
+  | GermanShepherd
+
+isItAThing : Maybe Thingy -> (Bool, String)
+def isItAThing mthingy = match mthingy with
+  | Some thing -> (true, "Yes, it is a thing")
+  | None       -> (false, "Nope. Not a thing")
+
+describeBreed : DogBreed -> String
+def describeBreed breed = match breed with
+  | Labrador        -> "friendly, intelligent and sociable"
+  | GoldenRetriever -> "loyal, gentle and great family pets"
+  | GermanShepherd  -> "highly intelligent, loyal and protective"
+

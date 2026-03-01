@@ -72,6 +72,8 @@ library
         Linnet.AST,
         Linnet.AST.Declarations,
         Linnet.AST.Operators,
+        Linnet.AST.Pattern,
+        Linnet.AST.Types,
         Linnet.Parser,
         Linnet.Prettyprint
 

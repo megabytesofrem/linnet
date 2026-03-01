@@ -18,26 +18,12 @@ module Linnet.AST.Declarations
 where
 
 import Control.Lens.TH (makeLenses)
+import Control.Monad (forM)
+import Data.List (intercalate)
 import Linnet.AST.Operators (BinOp, UnaryOp)
-
-data Ty
-  = TInt
-  | TFloat
-  | TBool
-  | TString
-  | TUnit
-  | TFn Ty Ty -- Function type, e.g. Int -> Int
-  | TVar String -- Type variable, e.g. a
-  | TForall String Ty -- forall a. a -> a
-  | TCons String [Ty] -- Type constructor with parameters
-  deriving (Show, Eq)
-
-data Literal
-  = LitInt Integer
-  | LitFloat Double
-  | LitBool Bool
-  | LitString String
-  deriving (Show, Eq)
+import Linnet.AST.Pattern (Pat)
+import Linnet.AST.Types (Literal (..), Ty (..))
+import Linnet.Prettyprint (Prettyprint (..), getIndent, prettyPrintFoldable, withIndent)
 
 -- Binder used for let-bindings and function parameter types
 data Binder = Binder String (Maybe Ty)
@@ -60,6 +46,7 @@ data Expr
   | EApp Expr Expr -- f x y z
   | ELet Binder Expr Expr -- let x = expr1 in expr2
   | EIf Expr Expr Expr -- if cond then expr1 else expr2
+  | EMatch Expr [(Pat, Expr)] -- match expr with | pat -> expr
   | ELoop [LoopBinder] Expr -- loop (binders) expr
   
   -- Monadic binding and blocks
@@ -109,3 +96,133 @@ data Decl
   | ClassDeclaration TypeclassDeclaration
   | ClassImplementation TypeclassImplementation
   deriving (Show, Eq)
+
+-- Prettyprint
+
+instance Prettyprint Binder where
+  pretty (Binder name mty) = do
+    tyStr <- case mty of
+      Just ty -> do
+        tyStr' <- pretty ty
+        pure $ ": " <> tyStr'
+      Nothing -> pure ""
+    pure $ name <> tyStr
+
+instance Prettyprint LoopBinder where
+  pretty (LoopBinder name mty initVal) = do
+    tyStr <- case mty of
+      Just ty -> do
+        tyStr' <- pretty ty
+        pure $ ": " <> tyStr'
+      Nothing -> pure ""
+    initStr <- do
+      initStr' <- pretty initVal
+      pure $ " = " <> initStr'
+    pure $ name <> tyStr <> initStr
+
+instance Prettyprint Expr where
+  pretty (ELit lit) = pretty lit
+  pretty EUnit = pure "()"
+  pretty (EIdent name) = pure name
+  pretty (EUnaryOp op expr) = do
+    opStr <- pretty op
+    exprStr <- pretty expr
+    pure $ opStr <> exprStr
+  pretty (EBinOp op left right) = do
+    leftStr <- pretty left
+    opStr <- pretty op
+    rightStr <- pretty right
+    pure $ leftStr <> " " <> opStr <> " " <> rightStr
+  pretty (EList elems) = do
+    elemsStr <- prettyPrintFoldable elems
+    pure $ "[" <> intercalate ", " elemsStr <> "]"
+  pretty (ETuple elems) = do
+    elemsStr <- prettyPrintFoldable elems
+    pure $ "(" <> intercalate ", " elemsStr <> ")"
+  pretty (ELam params body) = do
+    bodyStr <- pretty body
+    pure $ "\\" <> unwords params <> " -> " <> bodyStr
+  pretty (EApp func arg) = do
+    funcStr <- pretty func
+    argStr <- pretty arg
+    pure $ funcStr <> " " <> argStr
+  pretty (ELet binder val body) = do
+    binderStr <- pretty binder
+    valStr <- pretty val
+    bodyStr <- pretty body
+    pure $ "let " <> binderStr <> " = " <> valStr <> " in " <> bodyStr
+  pretty (EIf cond thenBranch elseBranch) = do
+    condStr <- pretty cond
+    thenStr <- pretty thenBranch
+    elseStr <- pretty elseBranch
+    pure $ "if " <> condStr <> " then " <> thenStr <> " else " <> elseStr
+  -- pretty (EMatch expr cases) = do
+  --   exprStr <- pretty expr
+  --   casesStr <- withIndent $ do
+  --     indent <- getIndent
+  --     casesStr <- forM cases $ \(pat, caseExpr) -> do
+  --       patStr <- pretty pat
+  --       caseExprStr <- pretty caseExpr
+  --       pure $ indent <> "| " <> patStr <> " -> " <> caseExprStr
+  --     pure $ intercalate "\n" casesStr
+  --   baseIndent <- getIndent
+  --   pure $ "match " <> exprStr <> " with\n" <> casesStr <> "\n" <> baseIndent
+  pretty (ELoop binders body) = do
+    bindersStr <- prettyPrintFoldable binders
+    bodyStr <- pretty body
+    pure $ "loop (" <> intercalate ", " bindersStr <> ")" <> "{" <> bodyStr <> "}"
+  pretty (ELetM binder val) = do
+    binderStr <- pretty binder
+    valStr <- pretty val
+    pure $ "let! " <> binderStr <> " = " <> valStr
+  pretty (EBind name val) = do
+    valStr <- pretty val
+    pure $ name <> " <- " <> valStr
+  pretty (EBlock exprs) = do
+    exprsStr <- prettyPrintFoldable exprs
+    pure $ "!{ " <> intercalate "; " exprsStr <> " }"
+  pretty _ = pure "Not implemented yet"
+
+-- -- * Declarations
+instance Prettyprint Decl where
+  pretty (ExprDeclaration expr) = pretty expr
+  pretty (ClassDeclaration classDecl) = pretty classDecl
+  pretty (ClassImplementation impl) = pretty impl
+  pretty (DataDeclaration name params constructors) = pure "Not implemented yet"
+  pretty (FunctionDeclaration funcDecl) = pure "Not implemented yet"
+
+instance Prettyprint TypeclassDeclaration where
+  -- Pretty print a typeclass declaration:
+  -- class Show[a] {
+  --   fn show[a] : a -> String
+  -- }
+  pretty (TypeclassDecl name params methods') = do
+    let paramsStr = if null params then "" else "[" <> intercalate ", " params <> "]"
+    methodsStr <- withIndent $ do
+      indent <- getIndent
+      methodsStr <- forM methods' $ \(methodName, methodParams, methodType) -> do
+        typeStr <- pretty methodType
+        let paramsStr' =
+              if null methodParams
+                then ""
+                else "[" <> intercalate ", " methodParams <> "]"
+        pure $ indent <> "fn " <> methodName <> paramsStr' <> " -> " <> typeStr
+      pure $ intercalate "\n" methodsStr
+    baseIndent <- getIndent
+    pure $ "class " <> name <> paramsStr <> " {\n" <> methodsStr <> "\n" <> baseIndent <> "}"
+
+instance Prettyprint TypeclassImplementation where
+  -- Pretty print a typeclass implementation:
+  -- impl Show : MyType {
+  --  fn show (x: MyType) -> String = ..
+  -- }
+  pretty (TypeclassImpl cname ty methods') = do
+    tyStr <- pretty ty
+    methodsStr <- withIndent $ do
+      indent <- getIndent
+      methodsStr <- forM methods' $ \(methodName, methodExpr) -> do
+        methodExprStr <- pretty methodExpr
+        pure $ indent <> "fn " <> methodName <> " = " <> methodExprStr
+      pure $ intercalate "\n" methodsStr
+    baseIndent <- getIndent
+    pure $ "impl " <> cname <> " : " <> tyStr <> " {\n" <> methodsStr <> "\n" <> baseIndent <> "}"

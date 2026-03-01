@@ -1,7 +1,6 @@
 module ParserTests (parserTests) where
 
-import Linnet.AST.Declarations
-import Linnet.AST.Operators
+import Linnet.AST
 
 import Linnet.Parser (pLiteral, pType, parseDecl, parseExpr)
 import Test.Tasty
