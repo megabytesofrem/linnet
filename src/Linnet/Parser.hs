@@ -1,7 +1,3 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 -- Convention: Internal parsers are prefixed with p, and exported parsers are given
 -- canonical names like parseExpr, parseDecl, etc.
 module Linnet.Parser

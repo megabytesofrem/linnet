@@ -52,6 +52,16 @@ extra-doc-files:    CHANGELOG.md
 
 common warnings
     ghc-options: -Wall
+    default-extensions:
+      DerivingStrategies
+      DuplicateRecordFields
+      FlexibleInstances
+      GeneralisedNewtypeDeriving
+      ImportQualifiedPost
+      OverloadedStrings
+      OverloadedRecordDot
+      MultiParamTypeClasses
+      TupleSections
 
 library
     -- Import common warning flags.

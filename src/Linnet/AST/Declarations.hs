@@ -1,6 +1,3 @@
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-
 module Linnet.AST.Declarations
   ( Ty (..)
 
@@ -82,9 +79,9 @@ data TypeclassDeclaration = TypeclassDecl
   deriving (Show, Eq)
 
 data TypeclassImplementation = TypeclassImpl
-  { implClassName :: String
+  { className :: String
   , implType :: Ty
-  , implMethods :: [(String, Expr)]
+  , methods :: [(String, Expr)]
   }
   deriving (Show, Eq)
 
