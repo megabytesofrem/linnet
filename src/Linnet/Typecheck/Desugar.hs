@@ -1,4 +1,4 @@
-module Linnet.Desugar where
+module Linnet.Typecheck.Desugar where
 
 import Data.List (elemIndex)
 import Linnet.AST.Core qualified as Core
@@ -14,7 +14,7 @@ data TypeContext = TypeContext
 
 -- | Create an empty typing context
 mkContext :: TypeContext
-mkContext = TypeContext [] []
+mkContext = TypeContext{termEnv = [], typeEnv = []}
 
 -- | Create a default typing context with built-in terms and types
 defaultContext :: TypeContext

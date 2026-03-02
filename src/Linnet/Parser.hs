@@ -8,16 +8,16 @@ module Linnet.Parser
   )
 where
 
-import Linnet.AST.Declarations
-import Linnet.AST.Operators
-import Linnet.AST.Pattern (Pat (..))
-
 import Control.Monad.Combinators.Expr
 import Data.Maybe (fromMaybe)
 import Data.Void (Void)
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import Text.Megaparsec.Char.Lexer qualified as L
+
+import Linnet.AST.Declarations
+import Linnet.AST.Operators
+import Linnet.AST.Pattern (Pat (..))
 
 -- Parser type (Void is the custom error type)
 type Parser = Parsec Void String
