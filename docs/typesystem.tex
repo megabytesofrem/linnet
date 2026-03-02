@@ -1,0 +1,132 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{enumerate}
+\usepackage{mathpartir}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\newcommand{\ctx}{\Gamma}
+
+\title{Type System Specification}
+\author{Rem}
+
+\begin{document}
+\maketitle
+
+\section{Simply Typed Lambda Calculus (STLC)}
+We begin by formally defining the Simply Typed Lambda Calculus (STLC). This is the foundation of our
+type system, which is extended with System F later on.
+
+The syntax of types in STLC is nearly identical to the syntax of the lambda calculus itself.
+The term $x$ is used to denote a variable, and likewise $x \vdash \tau$ denotes that the variable $x$
+has type $\tau$ in the typing context $\ctx$.
+
+\begin{mathpar}
+    B = \{ \text{Int, Float, Bool, String, Unit, \dots} \} \\
+
+    \tau ::= \tau \to \tau \mid T \quad \text{where } T \in B
+\end{mathpar}
+
+Let $B$ be the set of base types. The set of types $\tau$ is defined inductively over $B$, such that a type can either be a recursive type
+definition of $\tau \to \tau$ or a base type $T$ where $T$ is an element of the set $B$.
+
+The format for typing rules is as follows:
+\begin{mathpar}
+    \inferrule {predicate}{conclusion} \quad \text{(Rule Name)}
+\end{mathpar}
+
+\subsubsection{Typing Rules for STLC}
+
+\begin{mathpar}
+    \inferrule {\mathit{x} {:} \sigma \in \ctx}{\ctx \vdash \mathit{x} {:} \sigma} \quad \text{(T-Var)}
+
+    \inferrule {\text{$c$ is a constant of type $\ctx$}}{\ctx \vdash \mathit{c} {:} T}
+    \quad \text{(T-Const)}
+
+    \\
+    \inferrule {\ctx, \mathit{x}{:}\sigma \vdash \mathit{e}{:}\tau}
+    {\ctx \vdash (\lambda\mathit{x}{:}\sigma.\mathit{e}) {:} (\sigma \to \tau)} \quad \text{(T-Abs)}
+
+    \inferrule {\ctx \vdash \mathit{e_1}{:} \sigma \to \tau \quad \ctx \vdash \mathit{e_2}{:}\sigma}
+    {\ctx \vdash \mathit{e_1} \mathit{e_2}{:}\tau} \quad \text{(T-App)}
+\end{mathpar}
+\\
+A typing assumption of $x:\sigma$ or $y:\tau$ means that the variable $x$ has either type $\sigma$ or $\tau$.
+
+\pagebreak
+In words, these typing rules can be described as follows:
+
+\begin{itemize}
+    \item T-Var: If $x$ has type $\sigma$ in the context $\ctx$, then $x$ has type $\sigma$
+    \item T-Const: Term constants have their appropriate base types ($c \in B$)
+    \item T-Abs: If under the assumption that $x$ has type $\sigma$, $e$ has type $\tau$, then in the same context without $x$, the lambda abstraction $\lambda x : \sigma . e$ has type $\sigma \to \tau$
+    \item T-App: If $e_1$ has type $\sigma \to \tau$ and $e_2$ has type $\sigma$, then the application $e_1 e_2$ has type $\tau$
+\end{itemize}
+
+Examples of closed terms (terms typeable in the empty context) include:
+\begin{itemize}
+    \item $\lambda x : x.x$ (the identity function/I combinator)
+    \item $\lambda x:\sigma.\lambda y:\tau.x$ (the K combinator)
+    \item $\lambda t:\sigma.\lambda f:\sigma.t$ (Church encoding of the boolean value true)
+\end{itemize}
+
+\section{System F}
+System F, also known as the polymorphic lambda calculus, extends STLC with universal quantification over types.
+
+\subsection{Typing Rules}
+The typing rules for System F include all the rules from STLC, plus rules for type abstraction and type application.
+
+\begin{mathpar}
+    \inferrule {\ctx \vdash M {:} \forall \alpha.\tau}{\ctx \vdash M \tau {:} \sigma[\tau/\alpha]}
+    \quad \text{(T-TApp)}
+
+    \inferrule {\ctx, \alpha \enspace \text{type} \vdash M {:} \tau}{\ctx \vdash \Lambda \alpha.M {:} \forall \alpha.\sigma}
+    \quad \text{(T-TAbs)}
+\end{mathpar}
+
+Where $\sigma,\tau$ are types, $\alpha$ is a type variable, and $\alpha \enspace \text{type}$ indicates that $\alpha$ is bound.
+In words, these rules can be described as follows:
+\begin{itemize}
+    \item T-TApp: If $M$ has type $\forall \alpha.\tau$, then applying $M$ to a type $\tau$ results in a term of type $\sigma[\tau/\alpha]$, where $\sigma[\tau/\alpha]$ denotes the substitution of $\tau$ for $\alpha$ in $\sigma$.
+    \item T-TAbs: If under the assumption that $\alpha$ is a type variable, $M$ has type $\tau$, then the type abstraction $\Lambda \alpha.M$ has type $\forall \alpha.\sigma$.
+\end{itemize}
+
+\subsubsection{Logic and Predicates in System F}
+The Boolean type can be defined as $\forall \alpha.\alpha \to \alpha \to \alpha$ and we can implement Church encodings
+for boolean and logical predicates as follows:
+
+The functions for \textbf{True} and \textbf{False}, require three arguments --- a type $\alpha$ and two lambda expressions.
+The two lambda expressions to decide which branch to take (either truthy or falsy).
+
+\begin{enumerate}
+    \item \textbf{T} = $\Lambda \alpha.\lambda x^\alpha.\lambda y^\alpha.x$
+    \item \textbf{F} = $\Lambda \alpha.\lambda x^\alpha.\lambda y^\alpha.y$
+\end{enumerate}
+
+And then from these we can define the logical predicates as follows:
+\begin{enumerate}
+    \item \textbf{AND} = $\lambda x^{\text{Bool}}\lambda y^{\text{Bool}}.xy F$
+    \item \textbf{OR} = $\lambda x^{\text{Bool}}\lambda y^{\text{Bool}}.xy T y$
+    \item \textbf{NOT} = $\lambda x^{\text{Bool}}.x F T$
+    \item \textbf{IF} = $\Lambda \alpha.\lambda x^{\text{Bool}}\lambda y^\alpha.\lambda z^\alpha.x \alpha yz$
+    \item \textbf{ISZERO} = $\lambda n^{\text{Nat}}.n \text{Bool} (\lambda x^{\text{Bool}}.F) T$
+\end{enumerate}
+
+\subsubsection{Church Numerals}
+System F allows recursive constructions to be embedded in a natural manner.
+$K_1 \to K_2 \to \dots \to S$
+
+Thus, we can define the type of natural numbers as follows using the Church encoding:
+\begin{enumerate}
+    \item \textit{zero} : $N$
+    \item \textit{succ} : $N \to N$
+
+    \item 0 := $\Lambda \alpha.\lambda x^\alpha.\lambda f^{\alpha \to \alpha}.x$
+    \item 1 := $\Lambda \alpha.\lambda x^\alpha.\lambda f^{\alpha \to \alpha}.fx$
+    \item 2 := $\Lambda \alpha.\lambda x^\alpha.\lambda f^{\alpha \to \alpha}.f(fx)$
+    \item 3 := $\Lambda \alpha.\lambda x^\alpha.\lambda f^{\alpha \to \alpha}.f(f(fx))$
+\end{enumerate}
+
+A church numeral for $n$ is a higher-order function that takes a function $f$ and an argument $x$ and applies $f$ to $x$ $n$ times.
+
+\end{document}
