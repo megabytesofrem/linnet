@@ -37,7 +37,7 @@ data LoopBinder = LoopBinder String (Maybe Ty) Expr
 data Expr
   = ELit Literal
   | EUnit -- ()
-  | EIdent String
+  | EVar String
   | EUnaryOp UnaryOp Expr
   | EBinOp BinOp Expr Expr
   | EList [Expr] -- [1, 2, 3]
@@ -123,7 +123,7 @@ instance Prettyprint LoopBinder where
 instance Prettyprint Expr where
   pretty (ELit lit) = pretty lit
   pretty EUnit = pure "()"
-  pretty (EIdent name) = pure name
+  pretty (EVar name) = pure name
   pretty (EUnaryOp op expr) = do
     opStr <- pretty op
     exprStr <- pretty expr

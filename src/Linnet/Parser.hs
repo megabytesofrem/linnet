@@ -269,7 +269,7 @@ pTerm =
     , pList
     , pLambda
     , ELit <$> pLiteral
-    , EIdent <$> pIdent
+    , EVar <$> pIdent
     ]
  where
   parenExprOrTuple = enclosed '(' ')' $ do

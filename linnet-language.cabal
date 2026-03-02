@@ -70,10 +70,12 @@ library
     -- Modules exported by the library.
     exposed-modules:
         Linnet.AST,
+        Linnet.AST.Core,
         Linnet.AST.Declarations,
         Linnet.AST.Operators,
         Linnet.AST.Pattern,
         Linnet.AST.Types,
+        Linnet.Desugar,
         Linnet.Parser,
         Linnet.Prettyprint
 

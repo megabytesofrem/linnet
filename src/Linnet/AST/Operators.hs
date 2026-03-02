@@ -4,6 +4,8 @@ module Linnet.AST.Operators
 
     -- * Operator associativity
   , Associativity (..)
+  , unOpToString
+  , binOpToString
   )
 where
 
@@ -70,3 +72,28 @@ instance Prettyprint BinOp where
   pretty Map = pure "<$>"
   pretty UFO = pure "<*>"
   pretty Alt = pure "<|>"
+
+unOpToString :: UnaryOp -> String
+unOpToString op = case op of
+  Negate -> "-"
+
+binOpToString :: BinOp -> String
+binOpToString op = case op of
+  Add -> "+"
+  Sub -> "-"
+  Mul -> "*"
+  Div -> "/"
+  Mod -> "%"
+  Eq -> "=="
+  Neq -> "/="
+  Lt -> "<"
+  Gt -> ">"
+  LtEq -> "<="
+  GtEq -> ">="
+  Apply -> " "
+  Compose -> "."
+  Bind -> ">>="
+  Pipe -> ">>"
+  Map -> "<$>"
+  UFO -> "<*>"
+  Alt -> "<|>"

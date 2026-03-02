@@ -31,7 +31,7 @@ exprTests =
   testGroup
     "Expression Tests"
     [ testCase "parse identifier" $
-        parses parseExpr "x" @?= Just (EIdent "x")
+        parses parseExpr "x" @?= Just (EVar "x")
     , testCase "parse unit: ()" $
         parses parseExpr "()" @?= Just EUnit
     , testCase "parse simple addition" $
@@ -51,16 +51,16 @@ exprTests =
           @?= Just (ETuple [ELit (LitInt 1), ELit (LitInt 2), ELit (LitInt 3)])
     , testCase "parse lambda expression: \\x -> x" $
         parses parseExpr "\\x -> x"
-          @?= Just (ELam ["x"] (EIdent "x"))
+          @?= Just (ELam ["x"] (EVar "x"))
     , testCase "parse lambda expression: \\x y -> x + y" $
         parses parseExpr "\\x y -> x + y"
-          @?= Just (ELam ["x", "y"] (EBinOp Add (EIdent "x") (EIdent "y")))
+          @?= Just (ELam ["x", "y"] (EBinOp Add (EVar "x") (EVar "y")))
     , testCase "parse let expression: let x = 1 in x + 2" $
         parses parseExpr "let x = 1 in x + 2"
-          @?= Just (ELet (Binder "x" Nothing) (ELit (LitInt 1)) (EBinOp Add (EIdent "x") (ELit (LitInt 2))))
+          @?= Just (ELet (Binder "x" Nothing) (ELit (LitInt 1)) (EBinOp Add (EVar "x") (ELit (LitInt 2))))
     , testCase "parse if expression: if x then y else z" $
         parses parseExpr "if x then y else z"
-          @?= Just (EIf (EIdent "x") (EIdent "y") (EIdent "z"))
+          @?= Just (EIf (EVar "x") (EVar "y") (EVar "z"))
     ]
 
 typeTests :: TestTree
@@ -93,7 +93,7 @@ declTests =
         parses parseDecl "1 + 2" @?= Just (ExprDeclaration (EBinOp Add (ELit (LitInt 1)) (ELit (LitInt 2))))
     , testCase "parse function declaration: name : a -> a; def name x = x" $
         parses parseDecl "name : a -> a\ndef name x = x"
-          @?= Just (FunctionDeclaration (FunctionDecl "name" [Binder "x" Nothing] (Just (TFn (TVar "a") (TVar "a"))) (ELam ["x"] (EIdent "x"))))
+          @?= Just (FunctionDeclaration (FunctionDecl "name" [Binder "x" Nothing] (Just (TFn (TVar "a") (TVar "a"))) (ELam ["x"] (EVar "x"))))
     ]
 
 parserTests :: TestTree
