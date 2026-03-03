@@ -6,6 +6,7 @@ module Linnet.Typecheck.Typechecker where
 import Control.Monad.Except
 import Control.Monad.Reader
 import Linnet.AST.Core qualified as Core
+import qualified Linnet.AST.Types as AST
 
 -- Mapper type used internally for type shifting/substitution
 type Mapper a = a -> a -> Core.Ty
@@ -63,15 +64,15 @@ tySubst j s = tyMap substVar j
 
 -- Extend the typing environment with a new type and run a new typechecking action
 -- in that environment.
-withType :: Core.Ty -> TypecheckM a -> TypecheckM a
-withType ty = local (ty :)
+checkWithType :: Core.Ty -> TypecheckM a -> TypecheckM a
+checkWithType ty = local (ty :)
 
 -- Lookup a type variable in the environment
 lookupEnv :: Int -> TypecheckM Core.Ty
 lookupEnv idx = do
   env <- ask
   if idx < length env
-    then return $ env !! idx
+    then pure $ env !! idx
     else throwError $ "Unbound type variable: " ++ show idx
 
 -- This is the core of System F.
@@ -79,6 +80,21 @@ lookupEnv idx = do
 -- It is not an inference function, it is a checking function. Inference will come later.
 
 typeOf :: Core.Expr -> TypecheckM Core.Ty
+typeOf (Core.ELit lit) = case lit of
+  AST.LitInt _ -> pure Core.TInt
+  AST.LitFloat _ -> pure Core.TFloat
+  AST.LitBool _ -> pure Core.TBool
+  AST.LitString _ -> pure Core.TString
+typeOf Core.EUnit = pure Core.TUnit
+typeOf (Core.EVar idx) = lookupEnv idx
+typeOf (Core.ELam argTy body) = do
+  retTy <- checkWithType argTy (typeOf body)
+  pure $ Core.TFn argTy retTy
+typeOf (Core.EAbs ty body) = do
+  bodyTy <- checkWithType ty (typeOf body)
+  pure $ Core.TForall bodyTy
+typeOf (Core.ELet ty _ expr) = checkWithType ty (typeOf expr)
+--
 typeOf _ = throwError "Typechecking not implemented yet"
 
 -- | Run the typechecker with a given type environment

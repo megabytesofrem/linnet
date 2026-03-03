@@ -64,7 +64,7 @@ type DataTypeConstructors = [(String, [Ty])]
 data TypeclassDeclaration = TypeclassDecl
   { className :: String
   , typeParams :: [String]
-  , methods :: [(String, [String], Ty)]
+  , methodSigs :: [(String, [String], Ty)]
   }
   deriving (Show, Eq)
 
@@ -73,7 +73,7 @@ makeLenses ''TypeclassDeclaration
 data TypeclassImplementation = TypeclassImpl
   { className :: String
   , implType :: Ty
-  , methods :: [(String, Expr)]
+  , methodImpls :: [(String, Expr)]
   }
   deriving (Show, Eq)
 
@@ -95,6 +95,10 @@ data Decl
   | DataDeclaration String [String] DataTypeConstructors
   | ClassDeclaration TypeclassDeclaration
   | ClassImplementation TypeclassImplementation
+  deriving (Show, Eq)
+
+-- Top-level program
+newtype Program = Program [Decl]
   deriving (Show, Eq)
 
 -- Prettyprint

@@ -97,12 +97,51 @@ desugarExpr ctx expr = case expr of
   --
   _ -> Left "Desugaring of expressions not implemented yet"
 
+desugarDecl :: TypeContext -> AST.Decl -> Either String Core.Def
+desugarDecl ctx decl = case decl of
+  AST.ExprDeclaration e -> do
+    desugaredExpr <- desugarExpr ctx e
+    Right $ Core.Def "_expr" Core.TUnit desugaredExpr
+  _ -> undefined
+
+-- Build the type signature for a type constructor
+-- typeName: Data type name ("List")
+-- typeParams: Polymorphic type parameters (a)
+-- paramTys: Types of the constructor parameters (e.g. Int for Cons)
+--
+-- Example: For "Cons : Int -> List a", typeName = "List", typeParams = ["a"], paramTys = [Int]
+buildConstructorSignature :: TypeContext -> String -> [String] -> [AST.Ty] -> Either String Core.Ty
+buildConstructorSignature ctx typeName typeParams paramTys = do
+  desugaredParams <- traverse (desugarTy ctx) paramTys
+
+  -- Build the return type (e.g. List a) using the type name and parameters
+  let returnType = Core.TCons typeName (map Core.TVar [0 .. length typeParams - 1])
+
+  -- Chain parameter types into a function type (e.g. Int -> List a)
+  Right $ foldr Core.TFn returnType desugaredParams
+
+-- Build the type signature for a function declaration
+buildFunctionSignature :: TypeContext -> [AST.Binder] -> Core.Ty -> Either String Core.Ty
+buildFunctionSignature ctx params retTy = go params
+  where
+    go [] = Right retTy
+    go (AST.Binder _ mty : rest) = do
+      -- Desugar the first parameter type, if any
+      paramTy <- case mty of
+        Just ty -> desugarTy ctx ty
+        Nothing -> Right Core.TUnit
+
+      -- Recursively build the remaining function type
+      restTy <- go rest
+      Right $ Core.TFn paramTy restTy
+
+
 desugarList :: TypeContext -> [AST.Expr] -> Either String Core.Expr
 desugarList ctx = expand
  where
   expand [] = do
     nilIndex <- lookupTerm ctx "Nil"
-    Right $ Core.EApp (Core.EVar nilIndex) Core.EUnit
+    Right $ Core.EVar nilIndex
   expand (x : xs) = do
     desugarHead <- desugarExpr ctx x
     desugarTail <- expand xs

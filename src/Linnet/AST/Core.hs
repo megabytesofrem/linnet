@@ -1,7 +1,7 @@
 -- | AST for our "core" language.
 module Linnet.AST.Core where
 
-import Linnet.AST qualified as AST
+import Linnet.AST.Types qualified as AST
 
 data Ty
   = TInt
@@ -23,4 +23,16 @@ data Expr
   | EAbs Ty Expr -- /\a -> expr
   | EApp Expr Expr -- f x
   | ELet Ty Expr Expr -- let x : ty = expr1 in expr2
+  deriving (Show, Eq)
+
+-- After desugaring, we only keep top-level named definitions
+data Def = Def
+  { defName :: String
+  , defType :: Ty
+  , defBody :: Expr
+  }
+  deriving (Show, Eq)
+
+-- Top-level program
+newtype Program = Program [Def]
   deriving (Show, Eq)
