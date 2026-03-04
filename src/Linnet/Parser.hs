@@ -415,7 +415,7 @@ pDataDeclaration = do
   typeParams' <- many pIdent
   _ <- symbol "="
   constructors <- pDataConstructor `sepBy1` symbol "|"
-  pure $ DataDeclaration typeName typeParams' constructors
+  pure $ DataDecl typeName typeParams' constructors
 
 pFunctionSignature :: Parser (String, [Binder], Maybe Ty)
 pFunctionSignature = do
@@ -440,8 +440,7 @@ pFunctionDeclaration = do
   let paramNames = map (\(Binder n _) -> n) paramBinders
       lambdaBody = foldr (\pname acc -> ELam [pname] acc) body paramNames
   pure $
-    FunctionDeclaration
-      (FunctionDecl name paramBinders mty lambdaBody)
+    FunctionDecl (FunctionDeclaration name paramBinders mty lambdaBody)
 
 pClassDeclaration :: Parser Decl
 pClassDeclaration = do
@@ -454,7 +453,7 @@ pClassDeclaration = do
   typeParams' <- many pIdent
   _ <- symbol "where"
   methods' <- many parseMethod
-  pure $ ClassDeclaration (TypeclassDecl className' typeParams' methods')
+  pure $ ClassDecl (TypeclassDeclaration className' typeParams' methods')
  where
   parseMethod = do
     methodName <- pIdent
@@ -474,7 +473,7 @@ pClassImplementation = do
   ty <- pType
   _ <- symbol "where"
   methods' <- many parseMethodImpl
-  pure $ ClassImplementation (TypeclassImpl className' ty methods')
+  pure $ ClassImpl (TypeclassImplementation className' ty methods')
  where
   parseMethodImpl = do
     _ <- symbol "def"
@@ -490,5 +489,5 @@ parseDecl =
     , try pClassDeclaration
     , try pClassImplementation
     , -- Fallback to parsing an expression declaration
-      ExprDeclaration <$> parseExpr
+      ExprDecl <$> parseExpr
     ]

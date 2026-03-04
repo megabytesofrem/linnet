@@ -7,6 +7,9 @@ module Linnet.AST.Declarations
   , Literal (..)
   , Expr (..)
   , Decl (..)
+  , Program (..)
+
+    -- * Declarations
   , TypeclassDeclaration (..)
   , TypeclassImplementation (..)
   , FunctionDeclaration (..)
@@ -61,7 +64,7 @@ data Expr
 
 type DataTypeConstructors = [(String, [Ty])]
 
-data TypeclassDeclaration = TypeclassDecl
+data TypeclassDeclaration = TypeclassDeclaration
   { className :: String
   , typeParams :: [String]
   , methodSigs :: [(String, [String], Ty)]
@@ -70,7 +73,7 @@ data TypeclassDeclaration = TypeclassDecl
 
 makeLenses ''TypeclassDeclaration
 
-data TypeclassImplementation = TypeclassImpl
+data TypeclassImplementation = TypeclassImplementation
   { className :: String
   , implType :: Ty
   , methodImpls :: [(String, Expr)]
@@ -79,7 +82,7 @@ data TypeclassImplementation = TypeclassImpl
 
 makeLenses ''TypeclassImplementation
 
-data FunctionDeclaration = FunctionDecl
+data FunctionDeclaration = FunctionDeclaration
   { funcName :: String
   , funcParams :: [Binder]
   , funcReturnType :: Maybe Ty
@@ -90,11 +93,11 @@ data FunctionDeclaration = FunctionDecl
 makeLenses ''FunctionDeclaration
 
 data Decl
-  = ExprDeclaration Expr
-  | FunctionDeclaration FunctionDeclaration
-  | DataDeclaration String [String] DataTypeConstructors
-  | ClassDeclaration TypeclassDeclaration
-  | ClassImplementation TypeclassImplementation
+  = ExprDecl Expr
+  | FunctionDecl FunctionDeclaration
+  | DataDecl String [String] DataTypeConstructors
+  | ClassDecl TypeclassDeclaration
+  | ClassImpl TypeclassImplementation
   deriving (Show, Eq)
 
 -- Top-level program
@@ -189,18 +192,18 @@ instance Prettyprint Expr where
 
 -- -- * Declarations
 instance Prettyprint Decl where
-  pretty (ExprDeclaration expr) = pretty expr
-  pretty (ClassDeclaration classDecl) = pretty classDecl
-  pretty (ClassImplementation impl) = pretty impl
-  pretty (DataDeclaration name params constructors) = pure "Not implemented yet"
-  pretty (FunctionDeclaration funcDecl) = pure "Not implemented yet"
+  pretty (ExprDecl expr) = pretty expr
+  pretty (ClassDecl classDecl) = pretty classDecl
+  pretty (ClassImpl impl) = pretty impl
+  pretty (DataDecl name params constructors) = pure "Not implemented yet"
+  pretty (FunctionDecl funcDecl) = pure "Not implemented yet"
 
 instance Prettyprint TypeclassDeclaration where
   -- Pretty print a typeclass declaration:
   -- class Show[a] {
   --   fn show[a] : a -> String
   -- }
-  pretty (TypeclassDecl name params methods') = do
+  pretty (TypeclassDeclaration name params methods') = do
     let paramsStr = if null params then "" else "[" <> intercalate ", " params <> "]"
     methodsStr <- withIndent $ do
       indent <- getIndent
@@ -220,7 +223,7 @@ instance Prettyprint TypeclassImplementation where
   -- impl Show : MyType {
   --  fn show (x: MyType) -> String = ..
   -- }
-  pretty (TypeclassImpl cname ty methods') = do
+  pretty (TypeclassImplementation cname ty methods') = do
     tyStr <- pretty ty
     methodsStr <- withIndent $ do
       indent <- getIndent

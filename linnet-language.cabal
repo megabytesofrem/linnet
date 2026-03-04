@@ -75,7 +75,7 @@ library
         Linnet.AST.Operators,
         Linnet.AST.Pattern,
         Linnet.AST.Types,
-        Linnet.Typecheck.Desugar,
+        Linnet.Typecheck.Lower,
         Linnet.Typecheck.Typechecker,
         Linnet.Parser,
         Linnet.Prettyprint
