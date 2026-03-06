@@ -95,13 +95,13 @@ lowerExpr ctx expr = case expr of
 
   --
   _ -> Left "Lowering of expressions not implemented yet"
-  
+
 lowerDecl :: TypeContext -> AST.Decl -> Either String [Core.Def]
 lowerDecl ctx decl = case decl of
   AST.ExprDecl e -> do
     loweredExpr <- lowerExpr ctx e
     Right [Core.Def "_expr" Core.TUnit loweredExpr]
-  AST.FunctionDecl(AST.FunctionDeclaration name params mty body) -> do
+  AST.FunctionDecl (AST.FunctionDeclaration name params mty body) -> do
     -- Build the function type signature
     retTy <- case mty of
       Just t -> lowerTy ctx t
@@ -118,13 +118,13 @@ lowerDecl ctx decl = case decl of
     traverse (desugarConstructor newCtx name params) ctors
   -- TODO: Handle typeclass declarations and implementations
   _ -> undefined
-  where
-    desugarConstructor ctx' typeName typeParams (ctorName, ctorParamTys) = do
-      ctorTy <- buildConstructorSignature ctx' typeName typeParams ctorParamTys
-      
-      -- Wrap in a forall (∀) for universal quantification over type parameters
-      let wrappedTy = foldr (\_ acc -> Core.TForall acc) ctorTy typeParams
-      Right $ Core.Def ctorName wrappedTy Core.EUnit
+ where
+  desugarConstructor ctx' typeName typeParams (ctorName, ctorParamTys) = do
+    ctorTy <- buildConstructorSignature ctx' typeName typeParams ctorParamTys
+
+    -- Wrap in a forall (∀) for universal quantification over type parameters
+    let wrappedTy = foldr (\_ acc -> Core.TForall acc) ctorTy typeParams
+    Right $ Core.Def ctorName wrappedTy Core.EUnit
 
 lowerProgram :: TypeContext -> AST.Program -> Either String Core.Program
 lowerProgram ctx (AST.Program decls) =
@@ -149,18 +149,17 @@ buildConstructorSignature ctx typeName typeParams paramTys = do
 -- Build the type signature for a function declaration
 buildFunctionSignature :: TypeContext -> [AST.Binder] -> Core.Ty -> Either String Core.Ty
 buildFunctionSignature ctx params retTy = go params
-  where
-    go [] = Right retTy
-    go (AST.Binder _ mty : rest) = do
-      -- Desugar the first parameter type, if any
-      paramTy <- case mty of
-        Just ty -> lowerTy ctx ty
-        Nothing -> Right Core.TUnit
+ where
+  go [] = Right retTy
+  go (AST.Binder _ mty : rest) = do
+    -- Desugar the first parameter type, if any
+    paramTy <- case mty of
+      Just ty -> lowerTy ctx ty
+      Nothing -> Right Core.TUnit
 
-      -- Recursively build the remaining function type
-      restTy <- go rest
-      Right $ Core.TFn paramTy restTy
-
+    -- Recursively build the remaining function type
+    restTy <- go rest
+    Right $ Core.TFn paramTy restTy
 
 lowerList :: TypeContext -> [AST.Expr] -> Either String Core.Expr
 lowerList ctx = expand

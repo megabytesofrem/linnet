@@ -8,9 +8,25 @@ module Linnet.Typecheck.Typechecker where
 import Control.Monad (mapAndUnzipM, unless)
 import Control.Monad.Except
 import Control.Monad.Reader
+import Data.Functor ((<&>))
 import Data.List (findIndex)
 import Linnet.AST qualified as AST
 import Linnet.AST.Core qualified as Core
+
+opSignature :: AST.BinOp -> Maybe (Core.Ty, Core.Ty, Core.Ty)
+opSignature op = case op of
+  AST.Add -> Just (Core.TInt, Core.TInt, Core.TInt)
+  AST.Sub -> Just (Core.TInt, Core.TInt, Core.TInt)
+  AST.Mul -> Just (Core.TInt, Core.TInt, Core.TInt)
+  AST.Div -> Just (Core.TInt, Core.TInt, Core.TInt)
+  AST.Mod -> Just (Core.TInt, Core.TInt, Core.TInt)
+  AST.Eq -> Just (Core.TInt, Core.TInt, Core.TBool)
+  AST.Neq -> Just (Core.TInt, Core.TInt, Core.TBool)
+  AST.Lt -> Just (Core.TInt, Core.TInt, Core.TBool)
+  AST.Gt -> Just (Core.TInt, Core.TInt, Core.TBool)
+  AST.LtEq -> Just (Core.TInt, Core.TInt, Core.TBool)
+  AST.GtEq -> Just (Core.TInt, Core.TInt, Core.TBool)
+  _ -> Nothing
 
 -- Mapper type used internally for type shifting/substitution
 type Mapper a = a -> a -> Core.Ty
@@ -39,6 +55,21 @@ instance MonadFail TypecheckM where
   fail = throwError
 
 --
+
+defaultEnv :: TypecheckEnv
+defaultEnv =
+  TypecheckEnv
+    { typeEnv = []
+    , -- The absolute bare minimum for the term environment
+      termEnv =
+        [ ("Cons", Core.TForall (Core.TFn (Core.TVar 0) (Core.TFn (Core.TCons "List" [Core.TVar 0]) (Core.TCons "List" [Core.TVar 0]))))
+        , ("Nil", Core.TForall (Core.TCons "List" [Core.TVar 0]))
+        , ("Tuple", Core.TForall (Core.TFn (Core.TVar 0) (Core.TFn Core.TUnit (Core.TCons "Tuple" [Core.TVar 0]))))
+        ]
+    }
+
+----------------------------------------
+-- System F type substitution and shifting
 
 tyMap :: Mapper Int -> Int -> Core.Ty -> Core.Ty
 tyMap f = walk
@@ -69,11 +100,15 @@ tySubst j s = tyMap substVar j
     | idx > j + c = Core.TVar (idx - 1)
     | otherwise = Core.TVar idx
 
+--
+
 -- Extend the typing environment with a new type and run a new typechecking action
 -- in that environment.
 checkWithType :: Core.Ty -> TypecheckM a -> TypecheckM a
 checkWithType ty = local (\env -> env{typeEnv = ty : typeEnv env})
 
+-- Extend the term environment with a new variable and run a new typechecking action
+-- in that environment.
 checkWithTerm :: String -> Core.Ty -> TypecheckM a -> TypecheckM a
 checkWithTerm name ty = local (\env -> env{termEnv = (name, ty) : termEnv env})
 
@@ -94,8 +129,9 @@ lookupTerm name = do
     Nothing -> throwError $ "Unbound term variable: " ++ name
 
 -- This is the core of System F.
--- Given an expression, this function will check it, and return its type.
--- It is not an inference function, it is a checking function. Inference will come later.
+
+----------------------------------------
+-- Inference
 
 infer :: AST.Expr -> TypecheckM (Core.Ty, Core.Expr)
 infer expr = case expr of
@@ -106,13 +142,24 @@ infer expr = case expr of
     pure (ty, Core.EVar idx)
   AST.EUnaryOp op e -> do
     (ty, e') <- infer e
-    -- Here we would check the operator and the operand type to determine the result type
-    throwError $ "Unary operator type inference not implemented for operator: " ++ show op
+    case op of
+      AST.Negate -> do
+        unless (ty == Core.TInt) (throwError "Type error: expected Int for negation")
+        negIdx <- lookupTerm "negate" <&> fst
+        pure (Core.TInt, Core.EApp (Core.EVar negIdx) e')
   AST.EBinOp op left right -> do
     (leftTy, left') <- infer left
     (rightTy, right') <- infer right
-    throwError $ "Binary operator type inference not implemented for operator: " ++ show op
-  AST.EList [] -> pure (Core.TCons "List" [], Core.EUnit) -- Empty list
+    case opSignature op of
+      Just (lty, rty, resTy) -> do
+        unless (leftTy == lty && rightTy == rty) $
+          throwError $
+            "Type error: expected " ++ show lty ++ " on the left side of " ++ show op ++ " and " ++ show rty ++ " on the right side"
+
+        opIdx <- lookupTerm (AST.binOpToString op) <&> fst
+        pure (resTy, Core.EApp (Core.EApp (Core.EVar opIdx) left') right')
+      Nothing -> throwError $ "Type inference not implemented for operator: " ++ show op
+  AST.EList [] -> pure (Core.TCons "List" [Core.TUnit], Core.EUnit) -- Empty list
   AST.EList (x : xs) -> do
     (headTy, headExpr) <- infer x
     (tys, exprs) <- mapAndUnzipM infer xs
@@ -122,16 +169,28 @@ infer expr = case expr of
     let listTy = Core.TCons "List" [headTy]
     listExpr <- buildList (headExpr : exprs)
     pure (listTy, listExpr)
-  AST.ETuple [] -> pure (Core.TCons "Tuple" [], Core.EUnit) -- Empty tuple
+  AST.ETuple [] -> pure (Core.TUnit, Core.EUnit) -- Empty tuple
   AST.ETuple (x : xs) -> do
     (headTy, headExpr) <- infer x
     (tys, exprs) <- mapAndUnzipM infer xs
 
-    -- Check each type
-    mapM_ (\ty -> unless (ty == headTy) (throwError "Tuple element type mismatch")) tys
-    let tupleTy = Core.TCons "Tuple" [headTy]
+    let tupleTy = Core.TCons "Tuple" (headTy : tys)
     tupleExpr <- buildTuple (headExpr : exprs)
     pure (tupleTy, tupleExpr)
+
+  -- Cannot infer lambda expressions type, we must check it in checkLam
+  AST.ELam{} -> throwError "Cannot infer lambda expression"
+  -- Function application
+  AST.EApp fn arg -> do
+    (fnTy, fn') <- infer fn
+    case fnTy of
+      Core.TFn argTy retTy -> do
+        arg' <- check arg argTy
+        pure (retTy, Core.EApp fn' arg')
+      _ -> throwError $ "Type error: expected a function type, but got " ++ show fnTy
+
+  -- TODO: Add ELet, EIf, EMatch, etc ..
+
   _ -> throwError $ "Type inference not implemented for expression: " ++ show expr
 
 inferLit :: AST.Literal -> TypecheckM (Core.Ty, Core.Expr)
@@ -141,12 +200,24 @@ inferLit lit = case lit of
   AST.LitBool _ -> pure (Core.TBool, Core.ELit lit)
   AST.LitString _ -> pure (Core.TString, Core.ELit lit)
 
+----------------------------------------
+-- Checking
+
 check :: AST.Expr -> Core.Ty -> TypecheckM Core.Expr
-check expr expectedTy = do
-  (inferredTy, inferredExpr) <- infer expr
-  if inferredTy == expectedTy
-    then pure inferredExpr
-    else throwError $ "Type error: expected " ++ show expectedTy ++ ", but got " ++ show inferredTy
+check expr expectedTy = case expr of
+  AST.ELam params body -> checkLam params body expectedTy
+  _ -> do
+    (inferredTy, inferredExpr) <- infer expr
+    if inferredTy == expectedTy
+      then pure inferredExpr
+      else throwError $ "Type error: expected " ++ show expectedTy ++ ", but got " ++ show inferredTy
+
+checkLam :: [String] -> AST.Expr -> Core.Ty -> TypecheckM Core.Expr
+checkLam [] body ty = check body ty
+checkLam (paramName : ps) body (Core.TFn paramTy retTy) = do
+  lamBody <- checkWithTerm paramName paramTy (checkLam ps body retTy)
+  pure $ Core.ELam paramTy lamBody
+checkLam _ _ _ = throwError "Expected function type / parameter count mismatch"
 
 buildList :: [Core.Expr] -> TypecheckM Core.Expr
 buildList exprs = do
