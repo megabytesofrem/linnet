@@ -4,6 +4,7 @@ import Data.List (elemIndex)
 import Linnet.AST.Core qualified as Core
 import Linnet.AST.Declarations qualified as AST
 import Linnet.AST.Operators (binOpToString, unOpToString)
+import Linnet.AST.Pattern (Pat (..))
 
 -- Context used during lowering to keep track of terms and types
 data TypeContext = TypeContext
@@ -20,7 +21,7 @@ mkContext = TypeContext{termEnv = [], typeEnv = []}
 defaultContext :: TypeContext
 defaultContext =
   TypeContext
-    { termEnv = ["Cons", "Nil"]
+    { termEnv = ["Cons", "Nil", "True", "False"]
     , typeEnv = []
     }
 
@@ -92,6 +93,16 @@ lowerExpr ctx expr = case expr of
     let newCtx = ctx{termEnv = name : termEnv ctx}
     loweredBody <- lowerExpr newCtx body
     Right $ Core.ELet ty loweredVal loweredBody
+  AST.EIf cond thenBranch elseBranch -> do
+    loweredCond <- lowerExpr ctx cond
+    loweredThen <- lowerExpr ctx thenBranch
+    loweredElse <- lowerExpr ctx elseBranch
+    Right $
+      Core.EMatch
+        loweredCond
+        [ (PLit (AST.LitBool True), loweredThen)
+        , (PLit (AST.LitBool False), loweredElse)
+        ]
 
   --
   _ -> Left "Lowering of expressions not implemented yet"

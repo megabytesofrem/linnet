@@ -1,6 +1,7 @@
 -- | AST for our "core" language.
 module Linnet.AST.Core where
 
+import Linnet.AST (Pat)
 import Linnet.AST.Types qualified as AST
 
 data Ty
@@ -23,6 +24,7 @@ data Expr
   | EAbs Ty Expr -- /\a -> expr
   | EApp Expr Expr -- f x
   | ELet Ty Expr Expr -- let x : ty = expr1 in expr2
+  | EMatch Expr [(Pat, Expr)] -- match expr with | pat -> expr
   deriving (Show, Eq)
 
 -- After desugaring, we only keep top-level named definitions

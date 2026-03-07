@@ -5,7 +5,11 @@
 \usepackage{listings}
 \usepackage{xcolor}
 
+\definecolor{darkred}{HTML}{962d2d}
+\definecolor{darkblue}{HTML}{2736b8}
 \newcommand{\ctx}{\Gamma}
+\newcommand{\synths}{\mathcolor{darkred}{\Rightarrow}}
+\newcommand{\checks}{\mathcolor{darkblue}{\Leftarrow}}
 
 \title{Type System Specification}
 \author{Rem}
@@ -32,7 +36,7 @@ definition of $\tau \to \tau$ or a base type $T$ where $T$ is an element of the 
 
 The format for typing rules is as follows:
 \begin{mathpar}
-    \inferrule {predicate}{conclusion} \quad \text{(Rule Name)}
+    \inferrule {premises}{conclusion} \quad \text{(Rule Name)}
 \end{mathpar}
 
 \subsubsection{Typing Rules for STLC}
@@ -128,5 +132,63 @@ Thus, we can define the type of natural numbers as follows using the Church enco
 \end{enumerate}
 
 A church numeral for $n$ is a higher-order function that takes a function $f$ and an argument $x$ and applies $f$ to $x$ $n$ times.
+
+% source: https://arxiv.org/pdf/1908.05839
+\section{Bidirectional Typing}
+Bidirectional typing has two stages: type inference and type checking.
+
+\begin{itemize}
+    \item Synthesis ($\synths$): The algorithm takes $\ctx$ and $e$ as input and produces a type $A$.
+    \item Checking ($\checks$): The algorithm takes $\ctx$, $e$ and a known type $A$ as input and verifies if $e$ matches $A$.
+\end{itemize}
+
+\subsection{Subsumption}
+Subsumption is the mechanism that allows the type system to switch from synthesis mode to checking mode.
+
+It defines a rule where if an expression $e$ $\synths$ a type $A$, and $A = B$ then $e$ $\checks$ $B$.
+
+
+% \begin{enumerate}
+%     \item Expressions: $e ::= x \enspace | \enspace \lambda x.e \enspace | \enspace e e \enspace | \enspace ()$
+%     \item Types := $A,B,C ::= unit \enspace | \enspace A \to A$
+%     \item Typing contexts $\ctx ::= \cdot \enspace | \enspace \ctx, x : A$
+% \end{enumerate}
+
+% TODO: fix alignment so that they are both left-justified
+
+
+\subsection{Bidirectional Typing Rules for STLC}
+
+\begin{flalign*}
+    \boxed{\ctx \vdash e {:} A}
+    \quad \text{Under context $\ctx$, expression $e$ has type $A$}
+\end{flalign*}
+
+\begin{flalign*}
+    \boxed{\ctx \vdash e \checks A}
+     & \quad \text{Under $\ctx$, expression $e$ checks against type $A$} \\
+    \boxed{\ctx \vdash e \synths A}
+     & \quad \text{Under $\ctx$, expression $e$ synthesizes type $A$}
+\end{flalign*}
+
+\begin{mathpar}
+    \inferrule {(x : A) \in \ctx}{\ctx \vdash x \synths A} \quad \text{(Var $\synths$)}
+    \quad
+    \inferrule {\ctx \vdash e \synths A \quad A = B}{\ctx \vdash e \checks B} \quad \text{(Subsumption $\checks$)}
+\end{mathpar}
+
+\begin{mathpar}
+    \inferrule {\ctx \vdash e \checks A}{\ctx \vdash (e : A) \synths A} \quad \text{(Annot $\synths$)}
+    \quad
+    \inferrule {}{\ctx \vdash () \checks unit} \quad \text{(Unit $\checks$)}
+    \\
+    \inferrule {\ctx, x : A_1 \vdash e \checks A_2}{\ctx \vdash (\lambda x.e) \checks A_1 \to A_2} \quad \text{($\to$IAbs $\checks$)}
+    \\
+    \inferrule {\ctx \vdash e_1 \synths A \to B \quad \ctx \vdash e_2 \checks A}{}
+\end{mathpar}
+
+Lambda abstractions ($\to$IAbs) are checked against $A_1 \to A_2$ by \textit{extending} the context with $x : A_1$
+and \textit{checking} the body $e$ against $A_2$. If we were to synthesize the type of a lambda abstraction,
+we start with no information so we use a checking rule instead of a synthesis rule.
 
 \end{document}
