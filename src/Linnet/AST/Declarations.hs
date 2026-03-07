@@ -23,7 +23,7 @@ where
 import Control.Lens.TH (makeLenses)
 import Control.Monad (forM)
 import Data.List (intercalate)
-import Linnet.AST.Operators (BinOp, UnaryOp)
+import Linnet.AST.Operators (Associativity, BinOp, UnaryOp)
 import Linnet.AST.Pattern (Pat)
 import Linnet.AST.Types (Literal (..), Ty (..))
 import Linnet.Prettyprint (Prettyprint (..), getIndent, prettyPrintFoldable, withIndent)
@@ -43,6 +43,7 @@ data Expr
   | EVar String
   | EUnaryOp UnaryOp Expr
   | EBinOp BinOp Expr Expr
+  | ECustomOp String Expr Expr -- For user-defined operators
   | EList [Expr] -- [1, 2, 3]
   | ETuple [Expr] -- (1, 2, 3)
   | ELam [String] Expr -- \x y -> expr
@@ -98,6 +99,7 @@ data Decl
   | DataDecl String [String] DataTypeConstructors
   | ClassDecl TypeclassDeclaration
   | ClassImpl TypeclassImplementation
+  | FixityDecl Associativity Int [String] -- associativity, precedence, operator symbols
   deriving (Show, Eq)
 
 -- Top-level program
@@ -197,6 +199,7 @@ instance Prettyprint Decl where
   pretty (ClassImpl impl) = pretty impl
   pretty (DataDecl name params constructors) = pure "Not implemented yet"
   pretty (FunctionDecl funcDecl) = pure "Not implemented yet"
+  pretty (FixityDecl assoc prec ops) = pure "Not implemented yet"
 
 instance Prettyprint TypeclassDeclaration where
   -- Pretty print a typeclass declaration:

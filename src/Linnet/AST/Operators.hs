@@ -4,11 +4,17 @@ module Linnet.AST.Operators
 
     -- * Operator associativity
   , Associativity (..)
+  , Fixity (..)
+  , FixityEnv
+  , builtinOps
+  , defaultFixityEnv
   , unOpToString
   , binOpToString
   )
 where
 
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as M
 import Linnet.Prettyprint (Prettyprint (..))
 
 -- The associativity of an operator, used in Parser.hs
@@ -17,6 +23,15 @@ data Associativity
   | AssocRight
   | AssocNone
   deriving (Show, Eq)
+
+data Fixity = Fixity
+  { fixityAssoc :: Associativity
+  , fixityPrec :: Int
+  }
+  deriving (Show, Eq)
+
+-- | Environment mapping operator names to their fixity
+type FixityEnv = Map String Fixity
 
 data UnaryOp
   = Negate -- -x
@@ -38,14 +53,49 @@ data BinOp
   -- * Functional operators
   | Apply   -- application: f x or f $ x
   | Compose -- composition: f . g
-
-  | Bind    -- m >>= f
-  | Pipe    -- x >> f
-  | Map     -- f <$> x
-  | UFO     -- f <*> x
-  | Alt     -- x <|> y
   deriving (Show, Eq)
 {- FOURMOLU_ENABLE -}
+
+builtinOps :: Map String BinOp
+builtinOps =
+  M.fromList
+    [ ("+", Add)
+    , ("-", Sub)
+    , ("*", Mul)
+    , ("/", Div)
+    , ("%", Mod)
+    , ("==", Eq)
+    , ("/=", Neq)
+    , ("<", Lt)
+    , (">", Gt)
+    , ("<=", LtEq)
+    , (">=", GtEq)
+    , (".", Compose)
+    , ("$", Apply)
+    ]
+
+defaultFixityEnv :: FixityEnv
+defaultFixityEnv =
+  M.fromList
+    [ ("*", Fixity AssocLeft 7)
+    , ("/", Fixity AssocLeft 7)
+    , ("%", Fixity AssocLeft 7)
+    , ("+", Fixity AssocLeft 6)
+    , ("-", Fixity AssocLeft 6)
+    , ("==", Fixity AssocNone 4)
+    , ("/=", Fixity AssocNone 4)
+    , ("<", Fixity AssocNone 4)
+    , (">", Fixity AssocNone 4)
+    , ("<=", Fixity AssocNone 4)
+    , (">=", Fixity AssocNone 4)
+    , (".", Fixity AssocRight 9)
+    , ("$", Fixity AssocRight 0)
+    , (">>=", Fixity AssocLeft 1)
+    , (">>", Fixity AssocLeft 1)
+    , ("<$>", Fixity AssocLeft 4)
+    , ("<*>", Fixity AssocLeft 4)
+    , ("<|>", Fixity AssocLeft 3)
+    ]
 
 -- Prettyprint
 
@@ -67,11 +117,6 @@ instance Prettyprint BinOp where
   -- Functional operators
   pretty Apply = pure " "
   pretty Compose = pure "."
-  pretty Bind = pure ">>="
-  pretty Pipe = pure ">>"
-  pretty Map = pure "<$>"
-  pretty UFO = pure "<*>"
-  pretty Alt = pure "<|>"
 
 unOpToString :: UnaryOp -> String
 unOpToString op = case op of
@@ -92,8 +137,3 @@ binOpToString op = case op of
   GtEq -> ">="
   Apply -> " "
   Compose -> "."
-  Bind -> ">>="
-  Pipe -> ">>"
-  Map -> "<$>"
-  UFO -> "<*>"
-  Alt -> "<|>"

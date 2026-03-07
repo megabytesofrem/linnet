@@ -15,6 +15,7 @@ import Text.Megaparsec
 import Text.Megaparsec.Char
 import Text.Megaparsec.Char.Lexer qualified as L
 
+import Data.Map.Strict qualified as M
 import Linnet.AST.Declarations
 import Linnet.AST.Operators
 import Linnet.AST.Pattern (Pat (..))
@@ -36,7 +37,10 @@ lexeme = L.lexeme sc
 
 reserved :: [String]
 reserved =
-  [ "forall"
+  [ "infixl"
+  , "infixr"
+  , "infix"
+  , "forall"
   , "data"
   , "class"
   , "impl"
@@ -279,39 +283,65 @@ pTerm =
       [e] -> e -- Just a parenthesized expression
       es -> ETuple es -- A tuple
 
--- Higher in the list = higher precedence.
-operatorTable :: [[Operator Parser Expr]]
-operatorTable =
-  [ [prefix "-" (EUnaryOp Negate)]
-  , -- Left-associative binary operators
-    [binary "*" (EBinOp Mul) AssocLeft]
-  , [binary "/" (EBinOp Div) AssocLeft]
-  , [binary "+" (EBinOp Add) AssocLeft]
-  , [binary "-" (EBinOp Sub) AssocLeft]
-  , [binary "==" (EBinOp Eq) AssocNone]
-  , [binary "/=" (EBinOp Neq) AssocNone]
-  , [binary "<" (EBinOp Lt) AssocNone]
-  , [binary ">" (EBinOp Gt) AssocNone]
-  , [binary "<=" (EBinOp LtEq) AssocNone]
-  , [binary ">=" (EBinOp GtEq) AssocNone]
-  , -- Functional operators
-    [binary "." (EBinOp Compose) AssocRight]
-  , [binary "$" (EBinOp Apply) AssocRight]
-  , [binary ">>=" (EBinOp Bind) AssocLeft]
-  , [binary ">>" (EBinOp Pipe) AssocLeft]
-  , [binary "<$>" (EBinOp Map) AssocLeft]
-  , [binary "<*>" (EBinOp UFO) AssocLeft]
-  , [binary "<|>" (EBinOp Alt) AssocLeft]
-  ]
+----------------------------------------
+-- Fixity
+pOpSymbol :: Parser String
+pOpSymbol = lexeme . try $ do
+  sym <- some (oneOf ("!#$%&*+./<=>?@\\^|-~" :: String))
+  if sym `elem` ["->", "=", ":", "<-", "|", "\\"]
+    then fail $ "Reserved operator symbol: " ++ show sym
+    else pure sym
+
+pFixityDecl :: Parser Decl
+pFixityDecl = do
+  assoc <-
+    choice
+      [ AssocLeft <$ symbol "infixl"
+      , AssocRight <$ symbol "infixr"
+      , AssocNone <$ symbol "infix"
+      ]
+
+  prec <- fromInteger <$> pInteger
+  ops <- pOpSymbol `sepBy1` symbol ","
+  pure $ FixityDecl assoc prec ops
+
+buildOperatorTable :: FixityEnv -> [[Operator Parser Expr]]
+buildOperatorTable env =
+  buildLevel env
+    <$> M.toDescList
+      (M.foldrWithKey groupOp M.empty env)
  where
-  prefix sym f = Prefix (f <$ symbol sym)
-  binary sym f assoc = case assoc of
-    AssocLeft -> InfixL (f <$ symbol sym)
-    AssocRight -> InfixR (f <$ symbol sym)
-    AssocNone -> InfixN (f <$ symbol sym)
+  groupOp :: String -> Fixity -> M.Map Int [String] -> M.Map Int [String]
+  groupOp op (Fixity _assoc prec) = M.insertWith (++) prec [op]
+
+  buildLevel :: FixityEnv -> (Int, [String]) -> [Operator Parser Expr]
+  buildLevel fixEnv (_prec, ops) = makeOp fixEnv <$> ops
+
+  makeOp :: FixityEnv -> String -> Operator Parser Expr
+  makeOp fixEnv op =
+    case M.lookup op fixEnv of
+      Just (Fixity AssocLeft _) ->
+        InfixL (mkBinOp op <$ symbol op) -- Left-associative infix
+      Just (Fixity AssocRight _) ->
+        InfixR (mkBinOp op <$ symbol op) -- Right-associative infix
+      Just (Fixity AssocNone _) ->
+        InfixN (mkBinOp op <$ symbol op) -- Non-associative infix
+      Nothing ->
+        InfixL (mkBinOp op <$ symbol op) -- Default to left-associative
+  mkBinOp :: String -> Expr -> Expr -> Expr
+  mkBinOp opStr =
+    case M.lookup opStr builtinOps of
+      Just op -> EBinOp op -- Built-in operator: use EBinOp
+      Nothing -> ECustomOp opStr -- User-defined: use ECustomOp
+
+parseExprWith :: FixityEnv -> Parser Expr
+parseExprWith fixEnv = makeExprParser pApp (unaryOps : table)
+ where
+  table = buildOperatorTable fixEnv
+  unaryOps = [Prefix (EUnaryOp Negate <$ symbol "-")]
 
 parseExpr :: Parser Expr
-parseExpr = makeExprParser pApp operatorTable
+parseExpr = parseExprWith defaultFixityEnv
 
 ----------------------------------------
 -- Pattern parser
@@ -484,10 +514,13 @@ pClassImplementation = do
 parseDecl :: Parser Decl
 parseDecl =
   choice
-    [ try pFunctionDeclaration
+    [ try pFixityDecl
+    , try pFunctionDeclaration
     , try pDataDeclaration
     , try pClassDeclaration
     , try pClassImplementation
     , -- Fallback to parsing an expression declaration
       ExprDecl <$> parseExpr
     ]
+
+-- TODO: Add parse program that parses fixity declarations first, and then everything else
