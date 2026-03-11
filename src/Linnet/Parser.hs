@@ -15,6 +15,7 @@ import Text.Megaparsec
 import Text.Megaparsec.Char
 import Text.Megaparsec.Char.Lexer qualified as L
 
+import Data.Char (GeneralCategory (..), generalCategory)
 import Data.Map.Strict qualified as M
 import Linnet.AST.Declarations
 import Linnet.AST.Operators
@@ -41,6 +42,7 @@ reserved =
   , "infixr"
   , "infix"
   , "forall"
+  , "∀"
   , "data"
   , "class"
   , "impl"
@@ -136,10 +138,21 @@ pBaseTy =
   parens = enclosed '(' ')'
 
 -- Parse arrow types: Int -> Int, (a -> b)
+
+pForAll :: Parser Ty
+pForAll = do
+  _ <- symbol "forall" <|> symbol "∀"
+  typeVars <- some pIdent
+  _ <- symbol "."
+  ty <- pArrowTy
+
+  -- TODO: Implement universial quantification later on in the type system
+  pure undefined
+
 pArrowTy :: Parser Ty
 pArrowTy = do
   base <- pBaseTy
-  rest <- optional (symbol "->" >> pArrowTy)
+  rest <- optional (symbol "->" <|> symbol "→" >> pArrowTy)
   pure $ case rest of
     Just f -> TFn base f
     Nothing -> base
@@ -147,6 +160,9 @@ pArrowTy = do
 -- Parse types with type constructors
 pType :: Parser Ty
 pType = do
+  -- TODO: Implement universal quantification later on in the type system
+  quantify <- optional $ pForAll *> (symbol "=>" <|> symbol "⇒")
+
   base <- pArrowTy
   pars <- many pBaseTy
   pure $ case pars of
@@ -176,9 +192,9 @@ pApp = do
 
 pLambda :: Parser Expr
 pLambda = do
-  _ <- symbol "\\"
+  _ <- symbol "\\" <|> symbol "λ"
   binders <- some pIdent
-  _ <- symbol "->"
+  _ <- symbol "->" <|> symbol "→"
   ELam binders <$> parseExpr
 
 pLet :: Parser Expr
@@ -204,7 +220,7 @@ pMatchBranch :: Parser (Pat, Expr)
 pMatchBranch = do
   _ <- symbol "|"
   pat <- pPattern
-  _ <- symbol "->"
+  _ <- symbol "->" <|> symbol "→"
   (pat,) <$> parseExpr
 
 pMatch :: Parser Expr
@@ -218,8 +234,8 @@ pMatch = do
 pLoop :: Parser Expr
 pLoop = do
   _ <- symbol "loop"
-  binders <- many parseBinder
-  symbol "{" >> ELoop binders <$> parseExpr <* symbol "}"
+  binders <- symbol "(" *> many parseBinder <* symbol ")"
+  symbol "do" >> ELoop binders <$> parseExpr <* symbol "end"
  where
   defaultValue ty = case ty of
     Just TInt -> ELit (LitInt 0)
@@ -239,7 +255,7 @@ pLoop = do
 pMonadBind :: Parser Expr
 pMonadBind = do
   ident <- pIdent
-  _ <- symbol "<-"
+  _ <- symbol "<-" <|> symbol "←"
   EBind ident <$> parseExpr
 
 pMonadLet :: Parser Expr
@@ -247,7 +263,7 @@ pMonadLet = do
   _ <- symbol "let!"
   ident <- pIdent
   ty <- optional (symbol ":" >> pType)
-  _ <- symbol "<-"
+  _ <- symbol "<-" <|> symbol "←"
   ELetM (Binder ident ty) <$> parseExpr
 
 -- NOTE: Do notation for monads e.g do ... end
@@ -287,8 +303,8 @@ pTerm =
 -- Fixity
 pOpSymbol :: Parser String
 pOpSymbol = lexeme . try $ do
-  sym <- some (oneOf ("!#$%&*+./<=>?@\\^|-~" :: String))
-  if sym `elem` ["->", "=", ":", "<-", "|", "\\"]
+  sym <- some (satisfy isOperatorChar)
+  if sym `elem` ["->", "=", ":", "<-", "|", "\\", "→", "←"] || isReserved sym
     then fail $ "Reserved operator symbol: " ++ show sym
     else pure sym
 
@@ -304,6 +320,18 @@ pFixityDecl = do
   prec <- fromInteger <$> pInteger
   ops <- pOpSymbol `sepBy1` symbol ","
   pure $ FixityDecl assoc prec ops
+
+isOperatorChar :: Char -> Bool
+isOperatorChar c =
+  c `elem` ("!#$%&*+./<=> ?@\\^|-~" :: String)
+    || generalCategory c
+      `elem` [ MathSymbol
+             , CurrencySymbol
+             , ModifierSymbol
+             , OtherSymbol
+             , DashPunctuation
+             , ConnectorPunctuation
+             ]
 
 buildOperatorTable :: FixityEnv -> [[Operator Parser Expr]]
 buildOperatorTable env =
@@ -524,3 +552,20 @@ parseDecl =
     ]
 
 -- TODO: Add parse program that parses fixity declarations first, and then everything else
+
+gatherFixityDecls :: [Decl] -> FixityEnv
+gatherFixityDecls = foldr gatherFixity M.empty
+ where
+  gatherFixity :: Decl -> FixityEnv -> FixityEnv
+  gatherFixity (FixityDecl assoc prec ops) env = foldr (\op -> M.insert op (Fixity assoc prec)) env ops
+
+applyFixityDecl :: FixityEnv -> Decl -> FixityEnv
+applyFixityDecl env (FixityDecl assoc prec ops) =
+  foldr (\op acc -> M.insert op (Fixity assoc prec) acc) env ops
+applyFixityDecl env _ = env
+
+parseProgram :: Parser [Decl]
+parseProgram = do
+  let fixityDecls = gatherFixityDecls <$> many (try pFixityDecl)
+  decls <- many (try parseDecl)
+  pure decls

@@ -66,11 +66,18 @@ builtinOps =
     , ("%", Mod)
     , ("==", Eq)
     , ("/=", Neq)
-    , ("<", Lt)
+    , -- Mathematical alternative syntax
+      ("≡", Eq)
+    , ("≠", Neq)
+    , ("≤", LtEq)
+    , ("≥", GtEq)
+    , --
+      ("<", Lt)
     , (">", Gt)
     , ("<=", LtEq)
     , (">=", GtEq)
     , (".", Compose)
+    , ("∘", Compose)
     , ("$", Apply)
     ]
 
@@ -88,7 +95,14 @@ defaultFixityEnv =
     , (">", Fixity AssocNone 4)
     , ("<=", Fixity AssocNone 4)
     , (">=", Fixity AssocNone 4)
-    , (".", Fixity AssocRight 9)
+    , -- Mathematical alternative syntax
+      ("≡", Fixity AssocNone 4)
+    , ("≠", Fixity AssocNone 4)
+    , ("≤", Fixity AssocNone 4)
+    , ("≥", Fixity AssocNone 4)
+    , -- Functional operators
+      (".", Fixity AssocRight 9)
+    , ("∘", Fixity AssocRight 9)
     , ("$", Fixity AssocRight 0)
     , (">>=", Fixity AssocLeft 1)
     , (">>", Fixity AssocLeft 1)
