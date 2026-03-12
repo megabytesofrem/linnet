@@ -191,4 +191,25 @@ Lambda abstractions ($\to$IAbs) are checked against $A_1 \to A_2$ by \textit{ext
 and \textit{checking} the body $e$ against $A_2$. If we were to synthesize the type of a lambda abstraction,
 we start with no information so we use a checking rule instead of a synthesis rule.
 
+
+\subsection{Implementation}
+
+\centering
+\begin{tabular}{|c|c|}
+    \hline
+    System F Rule    & Haskell Core Rule \\
+    \hline
+    $\forall a. A$   & TForall T         \\
+    $\Lambda a. e$   & EAbs e            \\
+    $e \enspace [A]$ & ETyApp e A        \\
+    $\lambda x:A.e$  & ELam T e          \\
+    $e_1 e_2$        & EApp e1 e2        \\
+    \hline
+\end{tabular}
+
+\begin{enumerate}
+    \item EAbs Expr -- $\Lambda a. e$ (type abstraction, introduces $\forall$)
+    \item ETyApp Expr Ty -- $e \enspace [A]$ (type application, eliminates $\forall$)
+\end{enumerate}
+
 \end{document}

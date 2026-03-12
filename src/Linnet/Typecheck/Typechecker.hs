@@ -164,6 +164,17 @@ infer expr = case expr of
   Core.ELam paramTy body -> do
     bodyTy <- checkWithType paramTy (infer body)
     pure $ Core.TFn paramTy bodyTy
+
+  -- Type abstraction: /\a -> body
+  Core.EAbs body -> do
+    bodyTy <- withTypeVar "a" (infer body)
+    pure $ Core.TForall bodyTy
+  -- Type application: e [T]
+  Core.ETyApp e tyArg -> do
+    eTy <- infer e
+    case eTy of
+      Core.TForall bodyTy -> pure $ tySubst 0 tyArg bodyTy
+      _ -> throwError $ "Expected a polymorphic type got: " ++ show eTy
   Core.ELet ty val body -> do
     valTy <- infer val
     unless (valTy == ty) $
@@ -182,8 +193,35 @@ inferLit lit = case lit of
 ----------------------------------------
 -- Checking
 
+assertTy :: Core.Ty -> Core.Ty -> TypecheckM ()
+assertTy expected actual =
+  unless (expected == actual) $
+    throwError $
+      "Type mismatch: expected " ++ show expected ++ ", got " ++ show actual
+
 check :: Core.Expr -> Core.Ty -> TypecheckM Core.Expr
-check expr expectedTy = undefined
+check expr expectedTy = case expr of
+  Core.ELit lit -> checkLit lit expectedTy
+  Core.EUnit -> do
+    assertTy expectedTy Core.TUnit
+    pure Core.EUnit
+  Core.EVar idx -> do
+    ty <- lookupType idx
+    assertTy expectedTy ty
+    pure $ Core.EVar idx
+  Core.ELam paramTy body -> case expectedTy of
+    Core.TFn expectedParamTy expectedRetTy -> do
+      assertTy expectedParamTy paramTy
+      lamBody <- checkWithType paramTy (check body expectedRetTy)
+      pure $ Core.ELam paramTy lamBody
+    _ -> throwError "Expected function type / parameter count mismatch"
+  _ -> undefined
+
+checkLit :: AST.Literal -> Core.Ty -> TypecheckM Core.Expr
+checkLit lit expectedTy = do
+  litTy <- inferLit lit
+  assertTy expectedTy litTy
+  pure $ Core.ELit lit
 
 checkPattern :: AST.Pat -> Core.Ty -> TypecheckM ()
 checkPattern pat expectedTy = case pat of

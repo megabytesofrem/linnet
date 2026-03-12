@@ -21,8 +21,9 @@ data Expr
   | EUnit -- ()
   | EVar Int -- De Bruijn index for variables
   | ELam Ty Expr -- \x -> expr
-  | EAbs Ty Expr -- /\a -> expr
-  | EApp Expr Expr -- f x
+  | EAbs Expr -- /\a -> expr    (type abstraction)
+  | ETyApp Expr Ty -- e [Int]   (type application)
+  | EApp Expr Expr -- e₁ e₂      (term application)
   | ELet Ty Expr Expr -- let x : ty = expr1 in expr2
   | EMatch Expr [(Pat, Expr)] -- match expr with | pat -> expr
   deriving (Show, Eq)

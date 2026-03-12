@@ -148,9 +148,7 @@ pForAll = do
   tyvars <- some pIdent
   _ <- symbol "."
   ty <- pArrowTy
-
-  -- TODO: Implement universial quantification later on in the type system
-  pure undefined
+  pure $ foldr TForall ty tyvars
 
 -- Parse arrow types: Int -> Int, (a -> b)
 pArrowTy :: Parser Ty
@@ -163,17 +161,17 @@ pArrowTy = do
 
 -- Parse types with type constructors
 pType :: Parser Ty
-pType = do
-  -- TODO: Implement universal quantification later on in the type system
-  quantify <- optional $ pForAll *> (symbol "=>" <|> symbol "⇒")
-
-  base <- pArrowTy
-  pars <- many pBaseTy
-  pure $ case pars of
-    [] -> base
-    ps -> case base of
-      TVar name -> TCons name ps
-      _ -> error "Type constructor must be a type variable"
+pType =
+  choice
+    [ try pForAll
+    , try pTypeConstructor
+    , pArrowTy
+    ]
+ where
+  pTypeConstructor = do
+    name <- pCtorIdent
+    params <- many pBaseTy
+    pure $ TCons name params
 
 pBinder :: Parser Binder
 pBinder = do
@@ -499,9 +497,7 @@ pFunctionDeclaration :: FixityEnv -> Parser Decl
 pFunctionDeclaration env = do
   -- name : a -> b -> c
   -- def name x y = expr
-
-  -- Later on: `def op x ++ y = expr`, but for now just `def ++ x y = expr`
-  -- Will need to lookahead by one token probably to distinguish between the two case
+  -- def name x y | pattern -> expr
 
   (sigName, _sigParams, mty) <- pFunctionSignature
   _ <- symbol "def"
@@ -513,16 +509,29 @@ pFunctionDeclaration env = do
         ++ " but definition is "
         ++ show defName
 
-  -- Stop before '=' to parse parameters
-  paramBinders <- manyTill pBinder (lookAhead (symbol "="))
-  _ <- symbol "="
-  body <- parseExprWith' env
+  -- Parse parameters until we hit an equals sign or a pipe (for pattern matching)
+  paramBinders <- manyTill pBinder (lookAhead (symbol "=" <|> symbol "|"))
 
-  -- Convert parameters into a lambda
+  -- Body can either be a simple expression, or a pattern match with branches
+  body <- pSimpleBody <|> pPatternBody
+
   let paramNames = map (\(Binder n _) -> n) paramBinders
-      lambdaBody = foldr (\pname acc -> ELam [pname] acc) body paramNames
-  pure $
-    FunctionDecl (FunctionDeclaration sigName paramBinders mty lambdaBody)
+  pure $ FunctionDecl (FunctionDeclaration sigName paramBinders mty (wrapBody paramNames body))
+ where
+  pSimpleBody :: Parser FunctionBody
+  pSimpleBody = do
+    _ <- symbol "="
+    SimpleBody <$> parseExprWith' env
+
+  pPatternBody :: Parser FunctionBody
+  pPatternBody = do
+    branches <- some pMatchBranch
+    pure $ PatternBody branches
+
+  wrapBody :: [String] -> FunctionBody -> FunctionBody
+  wrapBody [] body = body
+  wrapBody params (SimpleBody expr) = SimpleBody $ foldr (\p acc -> ELam [p] acc) expr params
+  wrapBody _ body@(PatternBody _branches) = body
 
 pClassDeclaration :: Parser Decl
 pClassDeclaration = do

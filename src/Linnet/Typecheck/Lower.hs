@@ -37,7 +37,7 @@ lookupType ctx name = try (name `elemIndex` typeEnv ctx) ("Unbound type variable
 
 -- Lowering
 
--- | Lower a type from the surface AST to the core AST
+-- Lower a type from the surface AST to the core AST
 lowerTy :: TypeContext -> AST.Ty -> Either String Core.Ty
 lowerTy _ctx AST.TInt = Right Core.TInt
 lowerTy _ctx AST.TFloat = Right Core.TFloat
@@ -53,7 +53,7 @@ lowerTy ctx (AST.TCons name params) = do
   paramTys <- traverse (lowerTy ctx) params
   Right $ Core.TCons name paramTys
 
--- | Lower an expression from the surface AST to the core AST
+-- Lower an expression from the surface AST to the core AST
 lowerExpr :: TypeContext -> AST.Expr -> Either String Core.Expr
 lowerExpr ctx expr = case expr of
   AST.ELit lit -> Right $ Core.ELit lit
@@ -107,6 +107,19 @@ lowerExpr ctx expr = case expr of
   --
   _ -> Left "Lowering of expressions not implemented yet"
 
+lowerFunctionBody :: TypeContext -> AST.FunctionBody -> Either String Core.Expr
+lowerFunctionBody ctx (AST.SimpleBody expr) = lowerExpr ctx expr
+lowerFunctionBody ctx (AST.PatternBody branches) = do
+  let scrutinee = Core.EVar 0 -- Placeholder for the scrutinee variable
+  loweredBranches <- traverse (lowerBranch ctx) branches
+
+  Right $ Core.EMatch scrutinee loweredBranches
+ where
+  lowerBranch ctx' (pat, expr) = do
+    loweredExpr <- lowerExpr ctx' expr
+    Right (pat, loweredExpr)
+
+-- Lower a top-level declaration from the surface AST to the core AST
 lowerDecl :: TypeContext -> AST.Decl -> Either String [Core.Def]
 lowerDecl ctx decl = case decl of
   AST.ExprDecl e -> do
@@ -122,13 +135,16 @@ lowerDecl ctx decl = case decl of
     -- Extend context with parameter names for lowering the body
     let paramNames = map (\(AST.Binder n _) -> n) params
         newCtx = ctx{termEnv = paramNames ++ termEnv ctx}
-    loweredBody <- lowerExpr newCtx body
+
+    -- Lower the function body
+    loweredBody <- lowerFunctionBody newCtx body
+
     Right [Core.Def name funcTy loweredBody]
   AST.DataDecl name params ctors -> do
     let newCtx = ctx{typeEnv = params ++ typeEnv ctx}
     traverse (desugarConstructor newCtx name params) ctors
   -- TODO: Handle typeclass declarations and implementations
-  _ -> undefined
+  _ -> Left "Lowering of this declaration type not implemented yet"
  where
   desugarConstructor ctx' typeName typeParams (ctorName, ctorParamTys) = do
     ctorTy <- buildConstructorSignature ctx' typeName typeParams ctorParamTys

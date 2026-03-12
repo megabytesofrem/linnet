@@ -13,6 +13,7 @@ module Linnet.AST.Declarations
   , TypeclassDeclaration (..)
   , TypeclassImplementation (..)
   , FunctionDeclaration (..)
+  , FunctionBody (..)
 
     -- * Binders
   , Binder (..)
@@ -47,7 +48,9 @@ data Expr
   | EList [Expr] -- [1, 2, 3]
   | ETuple [Expr] -- (1, 2, 3)
   | ELam [String] Expr -- \x y -> expr
-  | EApp Expr Expr -- f x y z
+  | ETyAbs [String] Expr -- /\a b -> expr (type abstraction)
+  | ETyApp Expr [Ty] -- e [Int, Bool]     (type application)
+  | EApp Expr Expr -- e₁ e₂                (term application)
   | ELet Binder Expr Expr -- let x = expr1 in expr2
   | EIf Expr Expr Expr -- if cond then expr1 else expr2
   | EMatch Expr [(Pat, Expr)] -- match expr with | pat -> expr
@@ -83,11 +86,16 @@ data TypeclassImplementation = TypeclassImplementation
 
 makeLenses ''TypeclassImplementation
 
+data FunctionBody
+  = SimpleBody Expr
+  | PatternBody [(Pat, Expr)]
+  deriving (Show, Eq)
+
 data FunctionDeclaration = FunctionDeclaration
   { funcName :: String
   , funcParams :: [Binder]
   , funcReturnType :: Maybe Ty
-  , funcBody :: Expr
+  , funcBody :: FunctionBody
   }
   deriving (Show, Eq)
 
@@ -165,17 +173,17 @@ instance Prettyprint Expr where
     thenStr <- pretty thenBranch
     elseStr <- pretty elseBranch
     pure $ "if " <> condStr <> " then " <> thenStr <> " else " <> elseStr
-  -- pretty (EMatch expr cases) = do
-  --   exprStr <- pretty expr
-  --   casesStr <- withIndent $ do
-  --     indent <- getIndent
-  --     casesStr <- forM cases $ \(pat, caseExpr) -> do
-  --       patStr <- pretty pat
-  --       caseExprStr <- pretty caseExpr
-  --       pure $ indent <> "| " <> patStr <> " -> " <> caseExprStr
-  --     pure $ intercalate "\n" casesStr
-  --   baseIndent <- getIndent
-  --   pure $ "match " <> exprStr <> " with\n" <> casesStr <> "\n" <> baseIndent
+  pretty (EMatch expr cases) = do
+    exprStr <- pretty expr
+    casesStr <- withIndent $ do
+      indent <- getIndent
+      casesStr <- forM cases $ \(pat, caseExpr) -> do
+        patStr <- pretty pat
+        caseExprStr <- pretty caseExpr
+        pure $ indent <> "| " <> patStr <> " -> " <> caseExprStr
+      pure $ intercalate "\n" casesStr
+    baseIndent <- getIndent
+    pure $ "match " <> exprStr <> " with\n" <> casesStr <> "\n" <> baseIndent
   pretty (ELoop binders body) = do
     bindersStr <- prettyPrintFoldable binders
     bodyStr <- pretty body
@@ -192,7 +200,7 @@ instance Prettyprint Expr where
     pure $ "!{ " <> intercalate "; " exprsStr <> " }"
   pretty _ = pure "Not implemented yet"
 
--- -- * Declarations
+-- * Declarations
 instance Prettyprint Decl where
   pretty (ExprDecl expr) = pretty expr
   pretty (ClassDecl classDecl) = pretty classDecl

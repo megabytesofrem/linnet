@@ -1,10 +1,10 @@
 ask_then_print : IO ()
 def ask_then_print = do
-    input <- read_line
+    input ← read_line
     print input
 end
 
-calc_sum : Int -> Int -> Int
+calc_sum : Int → Int → Int
 def calc_sum x y = x + y
 
 // Lists and record types
@@ -20,5 +20,5 @@ def movies =
   , Movie "Shrek" "Animation" 2002
   ]
 
-printList : forall a. [a] -> IO ()
+printList : ∀a. [a] → IO ()
 def printList itms = mapM print itms

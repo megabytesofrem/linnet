@@ -1,5 +1,5 @@
-class Aww a where
-  aww : a -> String
+class Aww α where
+  aww : α → String
 
 data Dog = Puppy String
 data Cat = Kitten String

@@ -1,6 +1,6 @@
 # Fdb version 4
-["pdflatex"] 1772887853.43565 "/home/rem/Dev/linnet/docs/typesystem.tex" "typesystem.pdf" "typesystem" 1772887853.77197 0
-  "/home/rem/Dev/linnet/docs/typesystem.tex" 1772887853.20285 8681 7a22d11fe815eb6bc06a6c344720c99a ""
+["pdflatex"] 1773328489.56428 "/home/rem/Dev/linnet/docs/typesystem.tex" "typesystem.pdf" "typesystem" 1773328489.89645 0
+  "/home/rem/Dev/linnet/docs/typesystem.tex" 1773328489.33107 9257 a0c58676ed700328513db6b77a80aa11 ""
   "/nix/store/33g8knc8j8af1bw32n8ha7lx4jvnyf5a-texlive-combined-full-2025.20250703/share/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1 5523663 1585999bf87ab7e7e2cc0c9c8966fda6 ""
   "/nix/store/33g8knc8j8af1bw32n8ha7lx4jvnyf5a-texlive-combined-full-2025.20250703/share/texmf-var/web2c/pdftex/pdflatex.fmt" 1 3600506 8144994c57113712aa11872f210f4bf7 ""
   "/nix/store/33g8knc8j8af1bw32n8ha7lx4jvnyf5a-texlive-combined-full-2025.20250703/share/texmf-var/web2c/texmf.cnf" 1 44455 399f6c06d4973c22632d040b82b6f690 ""
@@ -71,8 +71,8 @@
   "/nix/store/5l0xwh6bzjvcfy3dmpp8xq34mq7nkgjl-texlive-combined-full-2025.20250703-texmfdist/tex/latex/mathpartir/mathpartir.sty" 1 14401 0712448ba80da5750b26552c69bbf0c8 ""
   "/nix/store/5l0xwh6bzjvcfy3dmpp8xq34mq7nkgjl-texlive-combined-full-2025.20250703-texmfdist/tex/latex/tools/enumerate.sty" 1 3468 f21ceb3448a22fec45299f924e7fc48b ""
   "/nix/store/5l0xwh6bzjvcfy3dmpp8xq34mq7nkgjl-texlive-combined-full-2025.20250703-texmfdist/tex/latex/xcolor/xcolor.sty" 1 55384 b454dec21c2d9f45ec0b793f0995b992 ""
-  "typesystem.aux" 1772887853.73011 1058 3c24f80f40d44b1440d5e158a887a7e3 "pdflatex"
-  "typesystem.tex" 1772887853.20285 8681 7a22d11fe815eb6bc06a6c344720c99a ""
+  "typesystem.aux" 1773328489.85327 1165 6846851fb7dde7ce48a31a08b83809dd "pdflatex"
+  "typesystem.tex" 1773328489.33107 9257 a0c58676ed700328513db6b77a80aa11 ""
   (generated)
   "typesystem.aux"
   "typesystem.log"
