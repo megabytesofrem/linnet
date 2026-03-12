@@ -5,24 +5,29 @@ module Linnet.Parser
   , pType
   , parseExpr
   , parseDecl
+  , parseProgram
   )
 where
 
+import Control.Monad (unless, void)
 import Control.Monad.Combinators.Expr
+import Control.Monad.State
+import Data.Char (GeneralCategory (..), generalCategory)
+import Data.Map.Strict qualified as M
 import Data.Maybe (fromMaybe)
 import Data.Void (Void)
+import Linnet.AST.Declarations
+import Linnet.AST.Operators
+import Linnet.AST.Pattern (Pat (..))
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import Text.Megaparsec.Char.Lexer qualified as L
 
-import Data.Char (GeneralCategory (..), generalCategory)
-import Data.Map.Strict qualified as M
-import Linnet.AST.Declarations
-import Linnet.AST.Operators
-import Linnet.AST.Pattern (Pat (..))
-
 -- Parser type (Void is the custom error type)
 type Parser = Parsec Void String
+
+-- Wrap the Parser in StateT for maintaining the fixity environment
+type ParserS = StateT FixityEnv Parser
 
 -- | Space consumer: skips whitespace and comments.
 sc :: Parser ()
@@ -137,18 +142,17 @@ pBaseTy =
  where
   parens = enclosed '(' ')'
 
--- Parse arrow types: Int -> Int, (a -> b)
-
 pForAll :: Parser Ty
 pForAll = do
   _ <- symbol "forall" <|> symbol "∀"
-  typeVars <- some pIdent
+  tyvars <- some pIdent
   _ <- symbol "."
   ty <- pArrowTy
 
   -- TODO: Implement universial quantification later on in the type system
   pure undefined
 
+-- Parse arrow types: Int -> Int, (a -> b)
 pArrowTy :: Parser Ty
 pArrowTy = do
   base <- pBaseTy
@@ -323,7 +327,7 @@ pFixityDecl = do
 
 isOperatorChar :: Char -> Bool
 isOperatorChar c =
-  c `elem` ("!#$%&*+./<=> ?@\\^|-~" :: String)
+  c `elem` ("!#$%&*+./<=>?@\\^|-~" :: String)
     || generalCategory c
       `elem` [ MathSymbol
              , CurrencySymbol
@@ -370,6 +374,9 @@ parseExprWith fixEnv = makeExprParser pApp (unaryOps : table)
 
 parseExpr :: Parser Expr
 parseExpr = parseExprWith defaultFixityEnv
+
+parseExprWith' :: FixityEnv -> Parser Expr
+parseExprWith' = parseExprWith
 
 ----------------------------------------
 -- Pattern parser
@@ -472,33 +479,50 @@ pDataDeclaration = do
   typeName <- pCtorIdent
   typeParams' <- many pIdent
   _ <- symbol "="
-  constructors <- pDataConstructor `sepBy1` symbol "|"
-  pure $ DataDecl typeName typeParams' constructors
+
+  first <- optional (symbol "|") >> pDataConstructor
+  rest <- many (symbol "|" >> pDataConstructor)
+  pure $ DataDecl typeName typeParams' (first : rest)
+
+pFunctionName :: Parser String
+pFunctionName = lexeme (pIdent <|> pOpSymbol) <?> "function or operator name"
 
 pFunctionSignature :: Parser (String, [Binder], Maybe Ty)
 pFunctionSignature = do
   -- name : a -> b -> c
-  name <- pIdent
+  name <- pFunctionName
   _ <- symbol ":"
   ty <- pType
   pure (name, [], Just ty) -- Fill this in when parsing the full declaration
 
-pFunctionDeclaration :: Parser Decl
-pFunctionDeclaration = do
+pFunctionDeclaration :: FixityEnv -> Parser Decl
+pFunctionDeclaration env = do
   -- name : a -> b -> c
   -- def name x y = expr
-  (name, _params, mty) <- pFunctionSignature
+
+  -- Later on: `def op x ++ y = expr`, but for now just `def ++ x y = expr`
+  -- Will need to lookahead by one token probably to distinguish between the two case
+
+  (sigName, _sigParams, mty) <- pFunctionSignature
   _ <- symbol "def"
-  _ <- symbol name -- Ensure the function name is repeated in the definition
-  paramBinders <- many pBinder
+  defName <- pFunctionName
+  unless (defName == sigName) $
+    fail $
+      "Function name mismatch: signature is "
+        ++ show sigName
+        ++ " but definition is "
+        ++ show defName
+
+  -- Stop before '=' to parse parameters
+  paramBinders <- manyTill pBinder (lookAhead (symbol "="))
   _ <- symbol "="
-  body <- parseExpr
+  body <- parseExprWith' env
 
   -- Convert parameters into a lambda
   let paramNames = map (\(Binder n _) -> n) paramBinders
       lambdaBody = foldr (\pname acc -> ELam [pname] acc) body paramNames
   pure $
-    FunctionDecl (FunctionDeclaration name paramBinders mty lambdaBody)
+    FunctionDecl (FunctionDeclaration sigName paramBinders mty lambdaBody)
 
 pClassDeclaration :: Parser Decl
 pClassDeclaration = do
@@ -514,7 +538,7 @@ pClassDeclaration = do
   pure $ ClassDecl (TypeclassDeclaration className' typeParams' methods')
  where
   parseMethod = do
-    methodName <- pIdent
+    methodName <- pIdent <|> pOpSymbol
     _ <- symbol ":"
     methodType <- pType
     pure (methodName, [], methodType) -- No method type parameters for now
@@ -527,7 +551,6 @@ pClassImplementation = do
 
   _ <- symbol "impl"
   className' <- pCtorIdent
-  _ <- symbol ":"
   ty <- pType
   _ <- symbol "where"
   methods' <- many parseMethodImpl
@@ -535,37 +558,37 @@ pClassImplementation = do
  where
   parseMethodImpl = do
     _ <- symbol "def"
-    methodName <- pIdent
+    methodName <- pIdent <|> pOpSymbol
     methodExpr <- parseExpr
     pure (methodName, methodExpr)
 
-parseDecl :: Parser Decl
-parseDecl =
+parseDecl :: FixityEnv -> Parser Decl
+parseDecl env =
   choice
     [ try pFixityDecl
-    , try pFunctionDeclaration
+    , try (pFunctionDeclaration env)
     , try pDataDeclaration
     , try pClassDeclaration
     , try pClassImplementation
     , -- Fallback to parsing an expression declaration
-      ExprDecl <$> parseExpr
+      ExprDecl <$> parseExprWith' env
     ]
-
--- TODO: Add parse program that parses fixity declarations first, and then everything else
-
-gatherFixityDecls :: [Decl] -> FixityEnv
-gatherFixityDecls = foldr gatherFixity M.empty
- where
-  gatherFixity :: Decl -> FixityEnv -> FixityEnv
-  gatherFixity (FixityDecl assoc prec ops) env = foldr (\op -> M.insert op (Fixity assoc prec)) env ops
 
 applyFixityDecl :: FixityEnv -> Decl -> FixityEnv
 applyFixityDecl env (FixityDecl assoc prec ops) =
   foldr (\op acc -> M.insert op (Fixity assoc prec) acc) env ops
 applyFixityDecl env _ = env
 
+parseDeclS :: ParserS Decl
+parseDeclS = do
+  lift sc
+  env <- get
+  decl <- lift . parseDecl $ env
+  case decl of
+    FixityDecl{} -> modify (`applyFixityDecl` decl) -- Update state with new fixity info
+    _ -> pure ()
+
+  pure decl
+
 parseProgram :: Parser [Decl]
-parseProgram = do
-  let fixityDecls = gatherFixityDecls <$> many (try pFixityDecl)
-  decls <- many (try parseDecl)
-  pure decls
+parseProgram = evalStateT (many parseDeclS) defaultFixityEnv

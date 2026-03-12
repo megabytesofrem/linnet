@@ -1,0 +1,15 @@
+× : ∀α.Num α → α → α
+def × a b = a * b
+
+data ℕ =
+  | Zero 
+  | Succ ℕ
+
+zero : ℕ
+def zero = Zero
+
+succOf : ℕ → ℕ
+def succOf n
+  | Zero    → 1
+  | Succ 1  → 2
+  | Succ α  → Succ (succOf α + 1) 
