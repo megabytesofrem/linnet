@@ -4,6 +4,7 @@
 \usepackage{mathpartir}
 \usepackage{listings}
 \usepackage{xcolor}
+\usepackage{hyperref}
 
 \definecolor{darkred}{HTML}{962d2d}
 \definecolor{darkblue}{HTML}{2736b8}
@@ -75,24 +76,25 @@ Examples of closed terms (terms typeable in the empty context) include:
 \end{itemize}
 
 \section{System F}
-System F, also known as the polymorphic lambda calculus, extends STLC with universal quantification over types.
+System F, also known as the polymorphic lambda calculus, extends STLC with universal quantification over types ($\forall$ quantification).
+It was introduced by Jean-Yves Girard in 1972 and independently by John C. Reynolds in 1974.
 
 \subsection{Typing Rules}
 The typing rules for System F include all the rules from STLC, plus rules for type abstraction and type application.
 
 \begin{mathpar}
-    \inferrule {\ctx \vdash M {:} \forall \alpha.\tau}{\ctx \vdash M \tau {:} \sigma[\tau/\alpha]}
-    \quad \text{(T-TApp)}
-
-    \inferrule {\ctx, \alpha \enspace \text{type} \vdash M {:} \tau}{\ctx \vdash \Lambda \alpha.M {:} \forall \alpha.\sigma}
+    \inferrule {\ctx, \alpha \enspace \text{type} \vdash e {:} \tau}{\ctx \vdash \Lambda \alpha.e {:} \forall \alpha.\sigma}
     \quad \text{(T-TAbs)}
+
+    \inferrule {\ctx \vdash e {:} \forall \alpha.\tau}{\ctx \vdash e \tau {:} \sigma[\tau/\alpha]}
+    \quad \text{(T-TApp)}
 \end{mathpar}
 
 Where $\sigma,\tau$ are types, $\alpha$ is a type variable, and $\alpha \enspace \text{type}$ indicates that $\alpha$ is bound.
 In words, these rules can be described as follows:
 \begin{itemize}
-    \item T-TApp: If $M$ has type $\forall \alpha.\tau$, then applying $M$ to a type $\tau$ results in a term of type $\sigma[\tau/\alpha]$, where $\sigma[\tau/\alpha]$ denotes the substitution of $\tau$ for $\alpha$ in $\sigma$.
-    \item T-TAbs: If under the assumption that $\alpha$ is a type variable, $M$ has type $\tau$, then the type abstraction $\Lambda \alpha.M$ has type $\forall \alpha.\sigma$.
+    \item T-TApp: If $e$ has type $\forall \alpha.\tau$, then applying $e$ to a type $\tau$ results in a term of type $\sigma[\tau/\alpha]$, where $\sigma[\tau/\alpha]$ denotes the substitution of $\tau$ for $\alpha$ in $\sigma$.
+    \item T-TAbs: If under the assumption that $\alpha$ is a type variable, $e$ has type $\tau$, then the type abstraction $\Lambda \alpha.e$ has type $\forall \alpha.\sigma$.
 \end{itemize}
 
 \subsubsection{Logic and Predicates in System F}
@@ -136,6 +138,7 @@ A church numeral for $n$ is a higher-order function that takes a function $f$ an
 % source: https://arxiv.org/pdf/1908.05839
 \section{Bidirectional Typing}
 Bidirectional typing has two stages: type inference and type checking.
+In our Haskell implementation these would be \texttt{infer} and \texttt{check} respectively.
 
 \begin{itemize}
     \item Synthesis ($\synths$): The algorithm takes $\ctx$ and $e$ as input and produces a type $A$.
@@ -144,18 +147,7 @@ Bidirectional typing has two stages: type inference and type checking.
 
 \subsection{Subsumption}
 Subsumption is the mechanism that allows the type system to switch from synthesis mode to checking mode.
-
 It defines a rule where if an expression $e$ $\synths$ a type $A$, and $A = B$ then $e$ $\checks$ $B$.
-
-
-% \begin{enumerate}
-%     \item Expressions: $e ::= x \enspace | \enspace \lambda x.e \enspace | \enspace e e \enspace | \enspace ()$
-%     \item Types := $A,B,C ::= unit \enspace | \enspace A \to A$
-%     \item Typing contexts $\ctx ::= \cdot \enspace | \enspace \ctx, x : A$
-% \end{enumerate}
-
-% TODO: fix alignment so that they are both left-justified
-
 
 \subsection{Bidirectional Typing Rules for STLC}
 
@@ -182,34 +174,95 @@ It defines a rule where if an expression $e$ $\synths$ a type $A$, and $A = B$ t
     \quad
     \inferrule {}{\ctx \vdash () \checks unit} \quad \text{(Unit $\checks$)}
     \\
-    \inferrule {\ctx, x : A_1 \vdash e \checks A_2}{\ctx \vdash (\lambda x.e) \checks A_1 \to A_2} \quad \text{($\to$IAbs $\checks$)}
+    \inferrule {\ctx, x : A_1 \vdash e \checks A_2}{\ctx \vdash (\lambda x.e) \checks A_1 \to A_2} \quad \text{(LAbs $\checks$)}
     \\
-    \inferrule {\ctx \vdash e_1 \synths A \to B \quad \ctx \vdash e_2 \checks A}{}
+    \inferrule {\ctx \vdash e_1 \synths A \to B \quad \ctx \vdash e_2 \checks A}
+    {\ctx \vdash e_1 e_2 \synths B } \quad \text{(EApp $\synths$)}
 \end{mathpar}
 
-Lambda abstractions ($\to$IAbs) are checked against $A_1 \to A_2$ by \textit{extending} the context with $x : A_1$
+\pagebreak
+In words,
+\begin{itemize}
+    \item Variables (Var $\synths$) synthesize their type from the context
+    \item Subsumption (Subsumption $\checks$) allows switching from synthesis mode to checking mode
+    \item Annotations (Annot $\synths$) allow switching from checking mode to synthesis mode
+    \item Unit (Unit $\checks$) checks against the unit type '()'
+    \item Lambda abstractions (LAbs $\checks$) are checked against function types by extending the context $\ctx$
+          with the parameter type and checking the body against the return type
+    \item Function applications (EApp $\synths$) synthesize their type by synthesizing the function type
+          and checking the argument against the parameter type
+\end{itemize}
+
+\textbf{A note on lambda abstractions.}
+Lambda abstractions (LAbs $\checks$) are checked against $A_1 \to A_2$ by \textit{extending} the context with $x : A_1$
 and \textit{checking} the body $e$ against $A_2$. If we were to synthesize the type of a lambda abstraction,
-we start with no information so we use a checking rule instead of a synthesis rule.
+we start with no information so we use a \textbf{checking rule} instead of a \textbf{synthesis rule}.
 
+\subsection{Bidirectional Typing Rules for System F}
+Extending the bidirectional rules from STLC to System F, requires adding two new rules to support universal
+quantification over types ($\forall A.A$).
 
-\subsection{Implementation}
+Type abstraction (T-TAbs) and type application (T-TApp).
+Type abstraction is a checking rule, mirroing LAbs --- without a type annotation, there is no $\forall$ type to synthesize,
+so we use a checking rule instead.
 
-\centering
-\begin{tabular}{|c|c|}
-    \hline
-    System F Rule    & Haskell Core Rule \\
-    \hline
-    $\forall a. A$   & TForall T         \\
-    $\Lambda a. e$   & EAbs e            \\
-    $e \enspace [A]$ & ETyApp e A        \\
-    $\lambda x:A.e$  & ELam T e          \\
-    $e_1 e_2$        & EApp e1 e2        \\
-    \hline
-\end{tabular}
+Type application is a synthesis rule, as the quantifier elimination allows us to synthesize the resulting type by substitution.
+
 
 \begin{enumerate}
     \item EAbs Expr -- $\Lambda a. e$ (type abstraction, introduces $\forall$)
     \item ETyApp Expr Ty -- $e \enspace [A]$ (type application, eliminates $\forall$)
 \end{enumerate}
+
+\begin{mathpar}
+    % T-TAbs checks (mirrors LAbs, forall introduction)
+    \inferrule  {\ctx, \alpha \enspace \mathsf{type} \vdash e \checks \tau}
+    {\ctx \vdash \Lambda \alpha.e \checks \forall \alpha.\tau}
+    \quad \text{(T-TAbs $\checks$)}
+
+    % T-TApp synthesizes (forall elimination)
+    \inferrule {\ctx \vdash e \synths \forall\alpha.\tau}
+    {\ctx \vdash e\enspace[A] \synths \tau[A/\alpha]}
+    \quad \text{(T-TApp $\synths$)}
+\end{mathpar}
+
+\textbf{Comparison to the non-bidirectional typing rules.}
+The non-bidirectional typing rules are only shown for comparison, as the bidirection rules
+replace the previous rules.
+
+\begin{mathpar}
+    \inferrule {\ctx, \alpha \enspace \text{type} \vdash e {:} \tau}{\ctx \vdash \Lambda \alpha.e {:} \forall \alpha.\sigma}
+    \quad \text{(T-TAbs)}
+
+    \inferrule {\ctx \vdash e {:} \forall \alpha.\tau}{\ctx \vdash e \tau {:} \sigma[\tau/\alpha]}
+    \quad \text{(T-TApp)}
+\end{mathpar}
+
+\textbf{A note on strong normalization ($\beta$-normal form).}
+The typing rules do \textit{not} directly reduce terms to $\beta$-normal form, however strong normalization to $\beta$-normal form
+is an inherent \textit{property} of the System F type system. We can conclude from this that all well-typed terms will \textit{eventually}
+reduce to a $\beta$-normal form, but the typing rules themselves do not enforce this reduction.
+
+% Bibtext references
+\begin{thebibliography}{9}
+    \bibitem{Girard's System F}
+    \textit{Girard's System F} ---
+    Jean-Yves Girard. (1972)
+
+    \bibitem{Bidirectional Typing}
+    \textit{Bidirectional Typing} ---
+    Jana Dunfield and Neel Krishnaswami. (2020)
+    \bibitem{Types and Programming Languages}
+    \textit{Types and Programming Languages} ---
+    Benjamin C. Pierce. (2002)
+
+    \bibitem{STLC - Wikipedia}
+    \textit{Simply Typed Lambda Calculus} ---
+    \url{https://en.wikipedia.org/wiki/Simply_typed_lambda_calculus}
+
+    \bibitem{System F - Wikipedia}
+    \textit{System F} ---
+    \url{https://en.wikipedia.org/wiki/System_F}
+\end{thebibliography}
 
 \end{document}

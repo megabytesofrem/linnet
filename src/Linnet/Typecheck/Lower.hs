@@ -131,7 +131,6 @@ lowerDecl ctx decl = case decl of
       Just t -> lowerTy ctx t
       Nothing -> Right Core.TUnit
     funcTy <- buildFunctionSignature ctx params retTy
-
     -- Extend context with parameter names for lowering the body
     let paramNames = map (\(AST.Binder n _) -> n) params
         newCtx = ctx{termEnv = paramNames ++ termEnv ctx}
@@ -143,9 +142,16 @@ lowerDecl ctx decl = case decl of
   AST.DataDecl name params ctors -> do
     let newCtx = ctx{typeEnv = params ++ typeEnv ctx}
     traverse (desugarConstructor newCtx name params) ctors
-  -- TODO: Handle typeclass declarations and implementations
-  _ -> Left "Lowering of this declaration type not implemented yet"
+
+  -- Implement when we add System F omega features
+  AST.ClassDecl _ -> Left "Lowering of typeclass declarations not implemented yet"
+  AST.ClassImpl _ -> Left "Lowering of typeclass implementations not implemented yet"
+  -- Don't lower fixity declarations, discard them
+  AST.FixityDecl{} -> Right []
  where
+  -- TODO: Handle typeclass declarations and implementations
+  -- _ -> Left "Lowering of this declaration type not implemented yet"
+
   desugarConstructor ctx' typeName typeParams (ctorName, ctorParamTys) = do
     ctorTy <- buildConstructorSignature ctx' typeName typeParams ctorParamTys
 

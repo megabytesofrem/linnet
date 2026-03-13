@@ -5,10 +5,9 @@
 
 module Linnet.Typecheck.Typechecker where
 
-import Control.Monad (mapAndUnzipM, unless)
+import Control.Monad (unless)
 import Control.Monad.Except
 import Control.Monad.Reader
-import Data.Functor ((<&>))
 import Data.List (elemIndex, findIndex)
 import Linnet.AST qualified as AST
 import Linnet.AST.Core qualified as Core
