@@ -9,7 +9,7 @@ module Linnet.Parser
   )
 where
 
-import Control.Monad (unless, void)
+import Control.Monad (guard, unless, void)
 import Control.Monad.Combinators.Expr
 import Control.Monad.State
 import Data.Char (GeneralCategory (..), generalCategory)
@@ -67,6 +67,9 @@ reserved =
   , "true"
   , "false"
   ]
+
+primTypes :: [String]
+primTypes = ["Int", "Float", "Bool", "String", "()"]
 
 isReserved :: String -> Bool
 isReserved k = k `elem` reserved
@@ -128,20 +131,6 @@ pLiteral =
 
 -- * Type parsers
 
-pBaseTy :: Parser Ty
-pBaseTy =
-  choice
-    [ TInt <$ symbol "Int"
-    , TFloat <$ symbol "Float"
-    , TBool <$ symbol "Bool"
-    , TString <$ symbol "String"
-    , TUnit <$ symbol "()"
-    , TVar <$> pIdent
-    , parens pArrowTy
-    ]
- where
-  parens = enclosed '(' ')'
-
 pForAll :: Parser Ty
 pForAll = do
   _ <- symbol "forall" <|> symbol "∀"
@@ -150,28 +139,52 @@ pForAll = do
   ty <- pArrowTy
   pure $ foldr TForall ty tyvars
 
--- Parse arrow types: Int -> Int, (a -> b)
+-- Atomic types: no arrows, no application
+pAtomTy :: Parser Ty
+pAtomTy =
+  choice
+    [ TInt <$ symbol "Int"
+    , TFloat <$ symbol "Float"
+    , TBool <$ symbol "Bool"
+    , TString <$ symbol "String"
+    , TUnit <$ symbol "()"
+    , parens pType -- (Int -> Bool)
+    , TVar <$> pIdent -- type variables: a, b
+    ]
+ where
+  parens = enclosed '(' ')'
+
+-- Type application: Maybe Int, Either Int Bool, etc.
+-- Constructor applied to zero or more atomic types
+pAppTy :: Parser Ty
+pAppTy =
+  choice
+    [ try $ do
+        name <- pCtorIdent -- Maybe, Either, List...
+        guard (name `notElem` primTypes)
+        args <- many pAtomTy -- Int, Bool, a...
+        pure $ TCons name args
+    , pAtomTy
+    ]
+
+-- Arrow types: Int -> Int, Maybe a -> Bool
 pArrowTy :: Parser Ty
 pArrowTy = do
-  base <- pBaseTy
+  lhs <- pAppTy
   rest <- optional (symbol "->" <|> symbol "→" >> pArrowTy)
   pure $ case rest of
-    Just f -> TFn base f
-    Nothing -> base
+    Just rhs -> TFn lhs rhs
+    Nothing -> lhs
 
--- Parse types with type constructors
+pBaseTy :: Parser Ty
+pBaseTy = pAtomTy
+
 pType :: Parser Ty
 pType =
   choice
     [ try pForAll
-    , try pTypeConstructor
     , pArrowTy
     ]
- where
-  pTypeConstructor = do
-    name <- pCtorIdent
-    params <- many pBaseTy
-    pure $ TCons name params
 
 pBinder :: Parser Binder
 pBinder = do
