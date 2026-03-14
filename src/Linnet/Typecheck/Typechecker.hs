@@ -1,16 +1,14 @@
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-
 {- HLINT ignore "Avoid lambda" -}
 
 module Linnet.Typecheck.Typechecker where
 
-import Control.Monad (unless)
+import Control.Monad (forM, forM_, unless)
 import Control.Monad.Except
 import Control.Monad.Reader
 import Data.List (elemIndex, findIndex)
 import Linnet.AST qualified as AST
 import Linnet.AST.Core qualified as Core
+import Linnet.Typecheck.Monad (TypecheckM, runTypecheckM)
 
 opSignature :: AST.BinOp -> Maybe (Core.Ty, Core.Ty, Core.Ty)
 opSignature op = case op of
@@ -30,29 +28,15 @@ opSignature op = case op of
 -- Mapper type used internally for type shifting/substitution
 type Mapper a = a -> a -> Core.Ty
 
+-- Typechecker monad parameterized by the typing environment
+type TypecheckerM a = TypecheckM TypecheckEnv a
+
 data TypecheckEnv = TypecheckEnv
   { typeEnv :: [Core.Ty] -- Type environment for type variables
   , typeVarNames :: [String]
   , termEnv :: [(String, Core.Ty)] -- Term environment for variable names and their types
   }
   deriving (Show, Eq)
-
---  Typechecking monad with access to the type environment
-newtype TypecheckM a = TypecheckM
-  { runTypecheckM :: ReaderT TypecheckEnv (Except String) a
-  }
-  deriving (Functor, Applicative, Monad)
-
-instance MonadReader TypecheckEnv TypecheckM where
-  ask = TypecheckM ask
-  local f (TypecheckM m) = TypecheckM (local f m)
-
-instance MonadError String TypecheckM where
-  throwError = TypecheckM . throwError
-  catchError (TypecheckM m) handler = TypecheckM $ catchError m (runTypecheckM . handler)
-
-instance MonadFail TypecheckM where
-  fail = throwError
 
 --
 
@@ -108,26 +92,26 @@ tySubst j s = tyMap substVar j
 
 -- Extend the typing environment with a new type and run a new typechecking action
 -- in that environment.
-checkWithType :: Core.Ty -> TypecheckM a -> TypecheckM a
+checkWithType :: Core.Ty -> TypecheckerM a -> TypecheckerM a
 checkWithType ty = local (\env -> env{typeEnv = ty : typeEnv env})
 
 -- Extend the term environment with a new variable and run a new typechecking action
 -- in that environment.
-checkWithTerm :: String -> Core.Ty -> TypecheckM a -> TypecheckM a
+checkWithTerm :: String -> Core.Ty -> TypecheckerM a -> TypecheckerM a
 checkWithTerm name ty = local (\env -> env{termEnv = (name, ty) : termEnv env})
 
-withTypeVar :: String -> TypecheckM a -> TypecheckM a
+withTypeVar :: String -> TypecheckerM a -> TypecheckerM a
 withTypeVar name = local (\env -> env{typeVarNames = name : typeVarNames env})
 
 -- Lookup a type variable in the environment
-lookupType :: Int -> TypecheckM Core.Ty
+lookupType :: Int -> TypecheckerM Core.Ty
 lookupType idx = do
   env <- ask
   if idx < length (typeEnv env)
     then pure $ typeEnv env !! idx
     else throwError $ "Unbound type variable: " ++ show idx
 
-lookupTerm :: String -> TypecheckM (Int, Core.Ty)
+lookupTerm :: String -> TypecheckerM (Int, Core.Ty)
 lookupTerm name = do
   env <- ask
   case findIndex (\(n, _) -> n == name) (termEnv env) of
@@ -135,7 +119,14 @@ lookupTerm name = do
     Just idx -> pure (idx, snd $ termEnv env !! idx)
     Nothing -> throwError $ "Unbound term variable: " ++ name
 
-lowerTyM :: AST.Ty -> TypecheckM Core.Ty
+lookupTermBrujin :: Int -> TypecheckerM (String, Core.Ty)
+lookupTermBrujin idx = do
+  env <- ask
+  if idx < length (termEnv env)
+    then pure $ termEnv env !! idx
+    else throwError $ "Unbound term variable: " ++ show idx
+
+lowerTyM :: AST.Ty -> TypecheckerM Core.Ty
 lowerTyM ty = case ty of
   AST.TInt -> pure Core.TInt
   AST.TFloat -> pure Core.TFloat
@@ -155,34 +146,63 @@ lowerTyM ty = case ty of
 
 ----------------------------------------
 -- Inference
-infer :: Core.Expr -> TypecheckM Core.Ty
+infer :: Core.Expr -> TypecheckerM Core.Ty
 infer expr = case expr of
   Core.ELit lit -> inferLit lit
   Core.EUnit -> pure Core.TUnit
-  Core.EVar idx -> lookupType idx
+  Core.EVar idx -> do
+    env <- ask
+    if idx < length (termEnv env)
+      then pure . snd $ termEnv env !! idx
+      else throwError $ "Unbound variable index: " ++ show idx
   Core.ELam paramTy body -> do
-    bodyTy <- checkWithType paramTy (infer body)
+    -- Extend the term environment with a new variable for the parameter and infer the body type
+    bodyTy <- checkWithTerm "_lam" paramTy (infer body)
     pure $ Core.TFn paramTy bodyTy
 
-  -- Type abstraction: /\a -> body
+  -- Type abstraction: /\a -> body, introduces a type variable binder
   Core.EAbs body -> do
-    bodyTy <- withTypeVar "a" (infer body)
+    -- Extend the type environment with a new type variable and infer the body type
+    bodyTy <-
+      withTypeVar "a" (infer body)
+
     pure $ Core.TForall bodyTy
-  -- Type application: e [T]
+  -- Type application: e [T], substitutes a type argument into a polymorphic function
   Core.ETyApp e tyArg -> do
     eTy <- infer e
     case eTy of
       Core.TForall bodyTy -> pure $ tySubst 0 tyArg bodyTy
-      _ -> throwError $ "Expected a polymorphic type got: " ++ show eTy
+      _ -> throwError $ "Expected a polymorphic type, got: " ++ show eTy
+  -- Term application: e₁ e₂
+  Core.EApp func arg -> do
+    funcTy <- infer func
+    case funcTy of
+      Core.TFn paramTy retTy -> do
+        -- Check the argument against the parameter type
+        _ <- check arg paramTy
+        pure retTy
+      _ -> throwError $ "Expected a function type, got: " ++ show funcTy
   Core.ELet ty val body -> do
     valTy <- infer val
-    unless (valTy == ty) $
-      throwError $
-        "Type annotation mismatch: expected " ++ show ty ++ ", got " ++ show valTy
-    checkWithType ty (infer body)
-  _ -> undefined
+    ty =:= valTy
+    checkWithTerm "_let" ty (infer body)
+  Core.EMatch e branches -> do
+    eTy <- infer e
+    branchTys <- forM branches $ \(pat, branchExpr) -> do
+      checkPat pat eTy
+      infer branchExpr
 
-inferLit :: AST.Literal -> TypecheckM Core.Ty
+    -- Ensure all branches have the same type
+    case branchTys of
+      [] -> throwError "Empty match expression"
+      (first : rest) -> do
+        forM_ rest $ \ty ->
+          unless (ty == first) $
+            throwError $
+              "Branch type mismatch: expected " ++ show first ++ ", got " ++ show ty
+        pure first
+
+inferLit :: AST.Literal -> TypecheckerM Core.Ty
 inferLit lit = case lit of
   AST.LitInt _ -> pure Core.TInt
   AST.LitFloat _ -> pure Core.TFloat
@@ -192,38 +212,76 @@ inferLit lit = case lit of
 ----------------------------------------
 -- Checking
 
-assertTy :: Core.Ty -> Core.Ty -> TypecheckM ()
+assertTy :: Core.Ty -> Core.Ty -> TypecheckerM ()
 assertTy expected actual =
   unless (expected == actual) $
     throwError $
       "Type mismatch: expected " ++ show expected ++ ", got " ++ show actual
 
-check :: Core.Expr -> Core.Ty -> TypecheckM Core.Expr
+-- Infix operator for type assertion
+
+infix 4 =:=
+
+(=:=) :: Core.Ty -> Core.Ty -> TypecheckerM ()
+(=:=) = assertTy
+
+check :: Core.Expr -> Core.Ty -> TypecheckerM Core.Expr
 check expr expectedTy = case expr of
   Core.ELit lit -> checkLit lit expectedTy
   Core.EUnit -> do
-    assertTy expectedTy Core.TUnit
+    expectedTy =:= Core.TUnit
     pure Core.EUnit
   Core.EVar idx -> do
-    ty <- lookupType idx
-    assertTy expectedTy ty
+    -- Lookup variable type from term environment and assert it matches the expected type
+    (_name, varTy) <- lookupTermBrujin idx
+    varTy =:= expectedTy
     pure $ Core.EVar idx
   Core.ELam paramTy body -> case expectedTy of
     Core.TFn expectedParamTy expectedRetTy -> do
-      assertTy expectedParamTy paramTy
-      lamBody <- checkWithType paramTy (check body expectedRetTy)
+      paramTy =:= expectedParamTy
+      lamBody <- checkWithTerm "_lam" paramTy (check body expectedRetTy)
       pure $ Core.ELam paramTy lamBody
     _ -> throwError "Expected function type / parameter count mismatch"
-  _ -> undefined
+  -- Type abstraction: /\a -> body, introduces a type variable binder
+  Core.EAbs body -> case expectedTy of
+    Core.TForall expectedBodyTy -> do
+      body' <- withTypeVar "a" (check body expectedBodyTy)
+      pure $ Core.EAbs body'
+    _ -> throwError "Expected polymorphic type for type abstraction"
+  -- Type application: e [T], substitutes a type argument into a polymorphic function
+  Core.ETyApp e tyArg -> do
+    eTy <- infer e
+    case eTy of
+      Core.TForall bodyTy -> do
+        let instantiatedTy = tySubst 0 tyArg bodyTy
+        instantiatedTy =:= expectedTy
+        pure $ Core.ETyApp e tyArg
+      _ -> throwError $ "Expected a polymorphic type, got: " ++ show e
+  Core.EApp func arg -> do
+    funcTy <- infer func
+    case funcTy of
+      Core.TFn paramTy retTy -> do
+        retTy =:= expectedTy
 
-checkLit :: AST.Literal -> Core.Ty -> TypecheckM Core.Expr
+        -- Check the argument against the parameter type
+        arg' <- check arg paramTy
+        pure $ Core.EApp func arg'
+      _ -> throwError $ "Expected a function type, got: " ++ show funcTy
+  --
+  -- Subsumption: synthesize and compare (fallthrough case)
+  _ -> do
+    inferredTy <- infer expr
+    inferredTy =:= expectedTy
+    pure expr
+
+checkLit :: AST.Literal -> Core.Ty -> TypecheckerM Core.Expr
 checkLit lit expectedTy = do
   litTy <- inferLit lit
-  assertTy expectedTy litTy
+  expectedTy =:= litTy
   pure $ Core.ELit lit
 
-checkPattern :: AST.Pat -> Core.Ty -> TypecheckM ()
-checkPattern pat expectedTy = case pat of
+checkPat :: AST.Pat -> Core.Ty -> TypecheckerM ()
+checkPat pat expectedTy = case pat of
   AST.PLit (AST.LitBool _) ->
     unless (expectedTy == Core.TBool) $
       throwError "Pattern type mismatch: expected Bool"
@@ -232,14 +290,7 @@ checkPattern pat expectedTy = case pat of
       throwError "Pattern type mismatch: expected Int"
   _ -> throwError "Pattern checking not fully implemented"
 
--- checkLam :: Core.Expr -> Core.Ty -> TypecheckM Core.Expr
--- checkLam body ty = check body ty
--- checkLam body (Core.TFn paramTy retTy) = do
---   lamBody <- checkWithTerm paramName paramTy (checkLam ps body retTy)
---   pure $ Core.ELam paramTy lamBody
--- checkLam _ _ = throwError "Expected function type / parameter count mismatch"
-
-buildList :: [Core.Expr] -> TypecheckM Core.Expr
+buildList :: [Core.Expr] -> TypecheckerM Core.Expr
 buildList exprs = do
   (consIdx, _) <- lookupTerm "Cons"
   (nilIdx, _) <- lookupTerm "Nil"
@@ -249,7 +300,7 @@ buildList exprs = do
       (Core.EVar nilIdx)
       exprs
 
-buildTuple :: [Core.Expr] -> TypecheckM Core.Expr
+buildTuple :: [Core.Expr] -> TypecheckerM Core.Expr
 buildTuple [] = pure Core.EUnit
 buildTuple [e] = pure e
 buildTuple (e : es) = do
@@ -258,5 +309,5 @@ buildTuple (e : es) = do
   pure $ Core.EApp (Core.EApp (Core.EVar tupleIdx) e) tupleRest
 
 -- | Run the typechecker with a given type environment
-runTypecheck :: TypecheckEnv -> TypecheckM a -> Either String a
-runTypecheck env (TypecheckM m) = runExcept (runReaderT m env)
+runTypecheck :: TypecheckEnv -> TypecheckerM a -> Either String a
+runTypecheck env m = runExcept (runReaderT (runTypecheckM m) env)

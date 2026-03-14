@@ -1,5 +1,6 @@
 module Linnet.Typecheck.Lower where
 
+import Control.Monad (forM)
 import Data.List (elemIndex)
 import Linnet.AST.Core qualified as Core
 import Linnet.AST.Declarations qualified as AST
@@ -72,12 +73,20 @@ lowerExpr ctx expr = case expr of
     Right $ Core.EApp (Core.EApp (Core.EVar index) loweredLeft) loweredRight
   AST.EList xs -> lowerList ctx xs
   AST.ETuple xs -> lowerTuple ctx xs
+  --
   -- Catamorphism for lambda expressions: extend content
   AST.ELam params body -> do
     -- Extend context with parameter names
     let newCtx = ctx{termEnv = params ++ termEnv ctx}
     loweredBody <- lowerExpr newCtx body
-    Right $ foldr (\_ acc -> Core.ELam Core.TUnit acc) loweredBody params
+
+    -- Lookup binder types from context to build the function type signature
+    paramTys <- forM params $ \param -> case elemIndex param (termEnv newCtx) of
+      Just idx -> Right $ Core.TVar idx
+      Nothing -> Left $ "Unbound parameter in lambda: " ++ param
+
+    -- Wrap the body in nested lambdas for each parameter
+    Right $ foldr Core.ELam loweredBody paramTys
   -- Function application
   AST.EApp f x -> do
     loweredF <- lowerExpr ctx f
@@ -103,9 +112,30 @@ lowerExpr ctx expr = case expr of
         [ (PLit (AST.LitBool True), loweredThen)
         , (PLit (AST.LitBool False), loweredElse)
         ]
+  AST.EMatch scrutinee branches -> do
+    loweredScrutinee <- lowerExpr ctx scrutinee
+    loweredBranches <- traverse (lowerBranch ctx) branches
+    Right $ Core.EMatch loweredScrutinee loweredBranches
 
   --
   _ -> Left "Lowering of expressions not implemented yet"
+
+extractPatVars :: Pat -> [String]
+extractPatVars (PLit _) = []
+extractPatVars (PVar name) = [name]
+extractPatVars (PCons _ pats) = concatMap extractPatVars pats
+extractPatVars (PTuple pats) = concatMap extractPatVars pats
+extractPatVars (PList pats) = concatMap extractPatVars pats
+extractPatVars (PPartition hName tailPat) = extractPatVars (PVar hName) ++ extractPatVars tailPat
+extractPatVars PWildcard = []
+
+lowerBranch :: TypeContext -> (Pat, AST.Expr) -> Either String (Pat, Core.Expr)
+lowerBranch ctx (pat, expr) = do
+  -- Extend context with variables bound by the pattern
+  let newCtx = ctx{termEnv = extractPatVars pat ++ termEnv ctx}
+
+  loweredExpr <- lowerExpr newCtx expr
+  Right (pat, loweredExpr)
 
 lowerFunctionBody :: TypeContext -> AST.FunctionBody -> Either String Core.Expr
 lowerFunctionBody ctx (AST.SimpleBody expr) = lowerExpr ctx expr
@@ -114,10 +144,6 @@ lowerFunctionBody ctx (AST.PatternBody branches) = do
   loweredBranches <- traverse (lowerBranch ctx) branches
 
   Right $ Core.EMatch scrutinee loweredBranches
- where
-  lowerBranch ctx' (pat, expr) = do
-    loweredExpr <- lowerExpr ctx' expr
-    Right (pat, loweredExpr)
 
 -- Lower a top-level declaration from the surface AST to the core AST
 lowerDecl :: TypeContext -> AST.Decl -> Either String [Core.Def]

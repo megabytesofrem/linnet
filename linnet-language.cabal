@@ -76,6 +76,7 @@ library
         Linnet.AST.Pattern,
         Linnet.AST.Types,
         Linnet.Typecheck.Lower,
+        Linnet.Typecheck.Monad,
         Linnet.Typecheck.Typechecker,
         Linnet.Parser,
         Linnet.Prettyprint
