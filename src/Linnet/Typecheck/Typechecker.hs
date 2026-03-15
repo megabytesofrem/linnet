@@ -1,5 +1,8 @@
 {- HLINT ignore "Avoid lambda" -}
 
+-- Core type inference and typechecking based on System Fω
+-- Pass 1: Kind checking -- Kinds.hs
+-- Pass 2: Type inference and checking -- Typechecker.hs
 module Linnet.Typecheck.Typechecker where
 
 import Control.Monad (forM, forM_, unless)
@@ -26,7 +29,7 @@ opSignature op = case op of
   _ -> Nothing
 
 -- Mapper type used internally for type shifting/substitution
-type Mapper a = a -> a -> Core.Ty
+type Mapper a = a -> a -> Core.Kind -> Core.Ty
 
 -- Typechecker monad parameterized by the typing environment
 type TypecheckerM a = TypecheckM TypecheckEnv a
@@ -35,25 +38,36 @@ data TypecheckEnv = TypecheckEnv
   { typeEnv :: [Core.Ty] -- Type environment for type variables
   , typeVarNames :: [String]
   , termEnv :: [(String, Core.Ty)] -- Term environment for variable names and their types
+  , kindEnv :: [Core.Kind] -- Kind environment for type variables
+  , consKindEnv :: [(String, Core.Kind)] -- Kind environment for type constructors
   }
   deriving (Show, Eq)
 
 --
 
+-- The default kind environment for type constructors
+defaultConsKindEnv :: [(String, Core.Kind)]
+defaultConsKindEnv =
+  [ ("List", Core.KArrow Core.Star Core.Star) -- List : * -> *
+  , ("Maybe", Core.KArrow Core.Star Core.Star) -- Maybe : * -> *
+  , ("Bool", Core.Star) -- Bool : *
+  ]
+
+-- The default typing environment with built-in terms and types
 defaultEnv :: TypecheckEnv
 defaultEnv =
   TypecheckEnv
     { typeEnv = []
     , typeVarNames = []
-    , -- The absolute bare minimum for the term environment
-      termEnv =
-        [ ("Cons", Core.TForall (Core.TFn (Core.TVar 0) (Core.TFn (Core.TCons "List" [Core.TVar 0]) (Core.TCons "List" [Core.TVar 0]))))
-        , ("Nil", Core.TForall (Core.TCons "List" [Core.TVar 0]))
-        , ("Tuple", Core.TForall (Core.TFn (Core.TVar 0) (Core.TFn Core.TUnit (Core.TCons "Tuple" [Core.TVar 0]))))
-        , -- Boolean
-          ("True", Core.TCons "Bool" [])
-        , ("False", Core.TCons "Bool" [])
+    , termEnv =
+        [ ("Cons", Core.TForall (Core.TFn (Core.TVar 0 Core.Star) (Core.TFn (Core.TCons "List" [Core.TVar 0 Core.Star] Core.Star) (Core.TCons "List" [Core.TVar 0 Core.Star] Core.Star))))
+        , ("Nil", Core.TForall (Core.TCons "List" [Core.TVar 0 Core.Star] Core.Star))
+        , ("Tuple", Core.TForall (Core.TFn (Core.TVar 0 Core.Star) (Core.TFn Core.TUnit (Core.TCons "Tuple" [Core.TVar 0 Core.Star] Core.Star))))
+        , ("True", Core.TCons "Bool" [] Core.Star)
+        , ("False", Core.TCons "Bool" [] Core.Star)
         ]
+    , kindEnv = []
+    , consKindEnv = defaultConsKindEnv
     }
 
 ----------------------------------------
@@ -64,29 +78,29 @@ tyMap f = walk
  where
   -- Recursively walk the type, applying the mapping function to type variables
   walk c t = case t of
-    Core.TVar idx -> f c idx
+    Core.TVar idx kind -> f c idx kind
     Core.TFn arg ret -> Core.TFn (walk c arg) (walk c ret)
     Core.TForall body -> Core.TForall (walk (c + 1) body)
-    Core.TCons name params -> Core.TCons name (map (walk c) params)
+    Core.TCons name params kind -> Core.TCons name (map (walk c) params) kind
     _ -> t
 
 tyShift :: Int -> Core.Ty -> Core.Ty
 tyShift d = tyMap shiftVar d
  where
-  shiftVar c idx
+  shiftVar c idx kind
     -- If the Debrujin index >= the cutoff, shift it by d
-    | idx >= c = Core.TVar (idx + d)
-    | otherwise = Core.TVar idx
+    | idx >= c = Core.TVar (idx + d) kind
+    | otherwise = Core.TVar idx kind
 
 tySubst :: Int -> Core.Ty -> Core.Ty -> Core.Ty
 tySubst j s = tyMap substVar j
  where
-  substVar c idx
+  substVar c idx kind
     -- If the index == j + c, shift s by c and substitute it
     | idx == j + c = tyShift c s
     -- If the index is greater than j + c, shift it down by 1. Adjust for the removed binder.
-    | idx > j + c = Core.TVar (idx - 1)
-    | otherwise = Core.TVar idx
+    | idx > j + c = Core.TVar (idx - 1) kind
+    | otherwise = Core.TVar idx kind
 
 --
 
@@ -134,11 +148,16 @@ lowerTyM ty = case ty of
   AST.TString -> pure Core.TString
   AST.TUnit -> pure Core.TUnit
   AST.TFn arg ret -> Core.TFn <$> lowerTyM arg <*> lowerTyM ret
-  AST.TCons name params -> Core.TCons name <$> mapM lowerTyM params
+  AST.TCons name params -> do
+    params' <- mapM lowerTyM params
+    let kind = case params' of
+          [] -> Core.Star
+          _ -> foldr Core.KArrow Core.Star (map (\_ -> Core.Star) params')
+    pure $ Core.TCons name params' kind
   AST.TVar name -> do
     env <- ask
     case name `elemIndex` typeVarNames env of
-      Just idx -> pure $ Core.TVar idx
+      Just idx -> pure $ Core.TVar idx Core.Star
       Nothing -> throwError $ "Unbound type variable: " ++ name
   _ -> throwError $ "Cannot lower type: " ++ show ty
 

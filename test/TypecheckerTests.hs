@@ -10,6 +10,12 @@ import Test.Tasty.HUnit
 infers :: Core.Expr -> Either String Core.Ty
 infers expr = runTypecheck defaultEnv (infer expr)
 
+tvar :: Int -> Core.Ty
+tvar idx = Core.TVar idx Core.Star
+
+tcons :: String -> [Core.Ty] -> Core.Ty
+tcons name = flip (Core.TCons name) Core.Star
+
 checks :: Core.Expr -> Core.Ty -> Either String Core.Expr
 checks expr ty = runTypecheck defaultEnv (check expr ty)
 
@@ -33,7 +39,7 @@ checksFails expr ty = case checks expr ty of
 
 -- | id = Λa. λx:a. x
 idExpr :: Core.Expr
-idExpr = Core.EAbs (Core.ELam (Core.TVar 0) (Core.EVar 0))
+idExpr = Core.EAbs (Core.ELam (Core.TVar 0 Core.Star) (Core.EVar 0))
 
 -- | const = Λa. Λb. λx:a. λy:b. x
 constExpr :: Core.Expr
@@ -41,8 +47,8 @@ constExpr =
   Core.EAbs
     ( Core.EAbs
         ( Core.ELam
-            (Core.TVar 1)
-            (Core.ELam (Core.TVar 0) (Core.EVar 1))
+            (tvar 1)
+            (Core.ELam (tvar 0) (Core.EVar 1))
         )
     )
 
@@ -52,12 +58,12 @@ typecheckerTests =
     "System F Tests"
     [ -- T-TAbs checks
       testCase "check id against ∀a. a -> a" $
-        idExpr `checksWith` Core.TForall (Core.TFn (Core.TVar 0) (Core.TVar 0))
+        idExpr `checksWith` Core.TForall (Core.TFn (tvar 0) (tvar 0))
     , testCase "check id against wrong type fails" $
         checksFails idExpr (Core.TFn Core.TInt Core.TInt)
     , -- T-TAbs synths
       testCase "infer id: ∀a. a -> a" $
-        idExpr `infersWith` Core.TForall (Core.TFn (Core.TVar 0) (Core.TVar 0))
+        idExpr `infersWith` Core.TForall (Core.TFn (tvar 0) (tvar 0))
     , -- T-TApp synths
       testCase "infer id @Int: Int -> Int" $
         Core.ETyApp idExpr Core.TInt
@@ -83,7 +89,7 @@ typecheckerTests =
         constExpr
           `infersWith` Core.TForall
             ( Core.TForall
-                (Core.TFn (Core.TVar 1) (Core.TFn (Core.TVar 0) (Core.TVar 1)))
+                (Core.TFn (tvar 1) (Core.TFn (tvar 0) (tvar 1)))
             )
     , testCase "infer const @Int @Bool: Int -> Bool -> Int" $
         Core.ETyApp (Core.ETyApp constExpr Core.TInt) Core.TBool

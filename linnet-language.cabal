@@ -75,6 +75,7 @@ library
         Linnet.AST.Operators,
         Linnet.AST.Pattern,
         Linnet.AST.Types,
+        Linnet.Typecheck.Kinds,
         Linnet.Typecheck.Lower,
         Linnet.Typecheck.Monad,
         Linnet.Typecheck.Typechecker,

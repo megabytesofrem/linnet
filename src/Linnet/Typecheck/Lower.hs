@@ -45,14 +45,16 @@ lowerTy _ctx AST.TFloat = Right Core.TFloat
 lowerTy _ctx AST.TBool = Right Core.TBool
 lowerTy _ctx AST.TString = Right Core.TString
 lowerTy _ctx AST.TUnit = Right Core.TUnit
-lowerTy ctx (AST.TVar name) = Core.TVar <$> lookupType ctx name
+lowerTy ctx (AST.TVar name) = Core.TVar <$> lookupType ctx name <*> pure Core.Star
 lowerTy ctx (AST.TFn arg ret) = Core.TFn <$> lowerTy ctx arg <*> lowerTy ctx ret
 lowerTy ctx (AST.TForall var ty) = Core.TForall <$> lowerTy newCtx ty
  where
   newCtx = ctx{typeEnv = var : typeEnv ctx}
 lowerTy ctx (AST.TCons name params) = do
   paramTys <- traverse (lowerTy ctx) params
-  Right $ Core.TCons name paramTys
+
+  -- FIXME: VERY IMPORTANT: DO NOT ACTUALLY DO THIS, JUST FOR NOW
+  Right $ Core.TCons name paramTys Core.Star -- Assume all type constructors have kind *
 
 -- Lower an expression from the surface AST to the core AST
 lowerExpr :: TypeContext -> AST.Expr -> Either String Core.Expr
@@ -82,7 +84,7 @@ lowerExpr ctx expr = case expr of
 
     -- Lookup binder types from context to build the function type signature
     paramTys <- forM params $ \param -> case elemIndex param (termEnv newCtx) of
-      Just idx -> Right $ Core.TVar idx
+      Just idx -> Right $ Core.TVar idx Core.Star
       Nothing -> Left $ "Unbound parameter in lambda: " ++ param
 
     -- Wrap the body in nested lambdas for each parameter
@@ -200,7 +202,7 @@ buildConstructorSignature ctx typeName typeParams paramTys = do
   desugaredParams <- traverse (lowerTy ctx) paramTys
 
   -- Build the return type (e.g. List a) using the type name and parameters
-  let returnType = Core.TCons typeName (map Core.TVar [0 .. length typeParams - 1])
+  let returnType = Core.TCons typeName (map (`Core.TVar` Core.Star) [0 .. length typeParams - 1]) Core.Star
 
   -- Chain parameter types into a function type (e.g. Int -> List a)
   Right $ foldr Core.TFn returnType desugaredParams

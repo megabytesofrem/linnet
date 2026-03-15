@@ -10,11 +10,16 @@ data Ty
   | TBool
   | TString
   | TUnit
-  | TVar Int -- Type variable, e.g. a
+  | TVar Int Kind -- Type variable, e.g. a : *, f : * -> *
   | TFn Ty Ty -- Function type, e.g. Int -> Int
   | TForall Ty -- forall a. a -> a
-  | TCons String [Ty] -- Type constructor with parameters
+  | TCons String [Ty] Kind -- Maybe : * -> *, List : * -> *, etc.
   deriving (Show, Eq)
+
+data Kind
+  = Star -- The kind of all proper types.
+  | KArrow Kind Kind -- Kind arrow, e.g. * -> *
+  deriving (Eq, Show)
 
 data Expr
   = ELit AST.Literal
