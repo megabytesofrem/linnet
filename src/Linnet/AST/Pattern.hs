@@ -23,7 +23,7 @@ These are patterns used in match expressions and function parameters
 
 data Pat
   = PLit Literal
-  | PVar String
+  | PCapture String
   | PCons String [Pat] -- Constructor pattern, e.g. Just x, Cons x xs
   | PTuple [Pat] -- Tuple pattern, e.g. (x, y)
   | PList [Pat] -- List pattern, e.g. [x, y, z]
@@ -35,7 +35,7 @@ data Pat
 
 instance Prettyprint Pat where
   pretty (PLit lit) = pretty lit
-  pretty (PVar name) = pure name
+  pretty (PCapture name) = pure name
   pretty (PCons name pats) = do
     patStrs <- prettyPrintFoldable pats
     pure $ name <> " " <> unwords patStrs

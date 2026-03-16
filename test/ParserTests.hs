@@ -1,9 +1,9 @@
-module ParserTests (parserTests) where
+module ParserTests () where
 
 import Linnet.AST
 
 import Data.Void (Void)
-import Linnet.Parser (pLiteral, pType, parseDecl, parseExpr)
+import Linnet.Parser
 import Test.Tasty
 import Test.Tasty.HUnit
 import Text.Megaparsec (Parsec, Stream, parseMaybe)

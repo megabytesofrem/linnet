@@ -75,6 +75,12 @@ library
         Linnet.AST.Operators,
         Linnet.AST.Pattern,
         Linnet.AST.Types,
+        --
+        Linnet.Parse.Declarations,
+        Linnet.Parse.Pattern,
+        Linnet.Parse.Lexer,
+        Linnet.Parse.Types,
+        --
         Linnet.Typecheck.Kinds,
         Linnet.Typecheck.Lower,
         Linnet.Typecheck.Monad,

@@ -124,11 +124,11 @@ lowerExpr ctx expr = case expr of
 
 extractPatVars :: Pat -> [String]
 extractPatVars (PLit _) = []
-extractPatVars (PVar name) = [name]
+extractPatVars (PCapture name) = [name]
 extractPatVars (PCons _ pats) = concatMap extractPatVars pats
 extractPatVars (PTuple pats) = concatMap extractPatVars pats
 extractPatVars (PList pats) = concatMap extractPatVars pats
-extractPatVars (PPartition hName tailPat) = extractPatVars (PVar hName) ++ extractPatVars tailPat
+extractPatVars (PPartition hName tailPat) = extractPatVars (PCapture hName) ++ extractPatVars tailPat
 extractPatVars PWildcard = []
 
 lowerBranch :: TypeContext -> (Pat, AST.Expr) -> Either String (Pat, Core.Expr)

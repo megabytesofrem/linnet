@@ -1,0 +1,12 @@
+\contentsline {section}{\numberline {1}Simply Typed Lambda Calculus (STLC)}{1}{section.1}%
+\contentsline {subsubsection}{\numberline {1.0.1}Typing Rules for STLC}{2}{subsubsection.1.0.1}%
+\contentsline {section}{\numberline {2}System F}{3}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Typing Rules}{3}{subsection.2.1}%
+\contentsline {subsubsection}{\numberline {2.1.1}Logic and Predicates in System F}{4}{subsubsection.2.1.1}%
+\contentsline {subsubsection}{\numberline {2.1.2}Church Numerals}{4}{subsubsection.2.1.2}%
+\contentsline {section}{\numberline {3}Bidirectional Typing}{5}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Subsumption}{5}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Bidirectional Typing Rules for STLC}{5}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Bidirectional Typing Rules for System F}{6}{subsection.3.3}%
+\contentsline {section}{\numberline {4}System F$\omega $}{7}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Inference Rules (non-bidirectional)}{7}{subsection.4.1}%
