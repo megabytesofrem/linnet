@@ -2,9 +2,13 @@
 Small purely functional language inspired by ML and Haskell
 
 ## Features
-- Pure immutability
-- Implicitly monadic control flow via blocks (`!{ }`)
-- Zero `try/catch`, monadic error types are used instead
+- Everything is immutable
+- Functions are first-class citizens
+- An insanely powerful type system
+
+## Goal
+The end goal is to develop an incredibly powerful function programming language
+that produces 100% memory-safe C code.
 
 ## Syntax
 
@@ -32,4 +36,5 @@ end
 ```
 
 ## Type system
-Linnet uses a purely monadic effect system, inspired by Haskell.
+The type system is based on System F with the F omega extension, which allows for higher kinded types and direct encoding of
+category theory concepts (semigroups, monoids, functors, applicative functors etc).

@@ -31,7 +31,6 @@ import Control.Monad (unless)
 import Control.Monad.Combinators.Expr (Operator (..), makeExprParser)
 import Control.Monad.State
 import Data.Char (GeneralCategory (..), generalCategory)
-import Data.List (intercalate)
 import Data.Map.Strict qualified as M
 import Linnet.AST
 import Linnet.Parse.Lexer
