@@ -108,6 +108,8 @@ data Decl
   | ClassDecl TypeclassDeclaration
   | ClassImpl TypeclassImplementation
   | FixityDecl Associativity Int [String] -- associativity, precedence, operator symbols
+  | ImportDecl String (Maybe String) -- module name, optional alias
+  | ImportDeclExposing String [String] -- module name, list of exposed names
   deriving (Show, Eq)
 
 -- Top-level program

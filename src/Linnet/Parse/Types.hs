@@ -38,7 +38,7 @@ pAppTy :: Parser Ty
 pAppTy =
   choice
     [ try $ do
-        ctor <- pCtorIdent
+        ctor <- pCtorName
         guard (not $ isPrimitive ctor) -- Don't allow primitive types as constructors
         params <- many pAppTy
         pure $ TCons ctor params

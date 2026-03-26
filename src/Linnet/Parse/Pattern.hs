@@ -13,7 +13,7 @@ import Text.Megaparsec
 pConsPattern :: Parser Pat
 pConsPattern = do
   -- Cons x y
-  name <- pCtorIdent
+  name <- pCtorName
   patterns <- many pPattern
   pure $ PCons name patterns
 

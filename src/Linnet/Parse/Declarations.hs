@@ -31,6 +31,7 @@ import Control.Monad (unless)
 import Control.Monad.Combinators.Expr (Operator (..), makeExprParser)
 import Control.Monad.State
 import Data.Char (GeneralCategory (..), generalCategory)
+import Data.List (intercalate)
 import Data.Map.Strict qualified as M
 import Linnet.AST
 import Linnet.Parse.Lexer
@@ -236,25 +237,25 @@ parseExprWith' = parseExprWith
 
 pDataNullaryConstructor :: Parser (String, [Ty])
 pDataNullaryConstructor = do
-  name <- pCtorIdent
+  name <- pCtorName
   pure (name, [])
 
 pDataTupleConstructor :: Parser (String, [Ty])
 pDataTupleConstructor = do
-  name <- pCtorIdent
+  name <- pCtorName
   tys <- enclosed '(' ')' (sepBy pType (symbol ","))
   pure (name, tys)
 
 pDataTypedConstructor :: Parser (String, [Ty])
 pDataTypedConstructor = do
-  name <- pCtorIdent
+  name <- pCtorName
   tys <- some pAtomTy
   pure (name, tys)
 
 pDataRecordConstructor :: Parser (String, [Ty])
 pDataRecordConstructor = do
   -- TODO: Preserve field names
-  name <- pCtorIdent
+  name <- pCtorName
   fields <- enclosed '{' '}' (sepBy parseField (symbol ","))
   let tys = map snd fields
   pure (name, tys)
@@ -278,7 +279,7 @@ pDataConstructor =
 pDataDeclaration :: Parser Decl
 pDataDeclaration = do
   _ <- symbol "data"
-  typeName <- pCtorIdent
+  typeName <- pCtorName
   typeParams' <- many pIdent
   _ <- symbol "="
 
@@ -344,7 +345,7 @@ pClassDeclaration = do
   --   method2 : a -> a
 
   _ <- symbol "class"
-  className' <- pCtorIdent
+  className' <- pCtorName
   typeParams' <- many pIdent
   _ <- symbol "where"
   methods' <- many parseMethod
@@ -363,7 +364,7 @@ pClassImplementation = do
   --   def method2 a b = ...
 
   _ <- symbol "impl"
-  className' <- pCtorIdent
+  className' <- pCtorName
   ty <- pType
   _ <- symbol "where"
   methods' <- many parseMethodImpl
@@ -375,6 +376,38 @@ pClassImplementation = do
     methodExpr <- parseExpr
     pure (methodName, methodExpr)
 
+-- Parse an import declaration of the form:
+-- Qualified: import Data.List as List
+-- Exposing: import Data.List (map, filter)
+-- Total: import Data.List
+
+pQualifiedImport :: Parser Decl
+pQualifiedImport = do
+  _ <- symbol "import"
+  moduleName <- pModuleName
+  _ <- symbol "as"
+  ImportDecl moduleName . Just <$> pModuleName
+
+pExposingImport :: Parser Decl
+pExposingImport = do
+  _ <- symbol "import"
+  moduleName <- pModuleName
+  _ <- symbol "("
+  exposed <- pIdent `sepBy1` symbol ","
+  _ <- symbol ")"
+  pure $ ImportDeclExposing moduleName exposed
+
+pTotalImport :: Parser Decl
+pTotalImport = do
+  _ <- symbol "import"
+  moduleName <- pModuleName
+
+  -- If there is no alias given, we can access it via its full name
+  pure $ ImportDecl moduleName Nothing
+
+pImportDecl :: Parser Decl
+pImportDecl = try pQualifiedImport <|> try pExposingImport <|> try pTotalImport
+
 parseDecl :: FixityEnv -> Parser Decl
 parseDecl env =
   choice
@@ -383,6 +416,7 @@ parseDecl env =
     , try pDataDeclaration
     , try pClassDeclaration
     , try pClassImplementation
+    , try pImportDecl
     , -- Fallback to parsing an expression declaration
       ExprDecl <$> parseExprWith' env
     ]

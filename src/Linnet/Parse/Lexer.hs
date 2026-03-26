@@ -14,7 +14,9 @@ module Linnet.Parse.Lexer
 
     -- * Primitive parsers
   , pIdent
-  , pCtorIdent
+  , pCtorName
+  , pModuleName
+  , pQualifiedName
   , pInteger
   , pFloat
   , pString
@@ -30,6 +32,7 @@ module Linnet.Parse.Lexer
 import Control.Monad.State (StateT)
 import Data.Void (Void)
 
+import Data.List (intercalate)
 import Linnet.AST
 import Text.Megaparsec
 import Text.Megaparsec.Char
@@ -104,8 +107,8 @@ isPrimitive :: String -> Bool
 isPrimitive name = name `elem` primitiveTypes
 
 -- * Primitive parsers
-pIdent :: Parser String
-pIdent = lexeme . try $ do
+pIdentRaw :: Parser String
+pIdentRaw = lexeme . try $ do
   name <- (:) <$> letterChar <*> many alphas'
   if isReserved name
     then fail $ "Identifier cannot be a reserved word: " ++ name
@@ -113,14 +116,42 @@ pIdent = lexeme . try $ do
  where
   alphas' = letterChar <|> alphaNumChar <|> char '\'' <|> char '_'
 
-pCtorIdent :: Parser String
-pCtorIdent = lexeme . try $ do
+-- Raw version of pCtorName that doesnt have any lexeme wrapping
+pCtorRaw :: Parser String
+pCtorRaw = do
   c <- upperChar
   cs <- many (alphaNumChar <|> char '\'' <|> char '_')
   let name = c : cs
   if isReserved name
     then fail $ "Constructor cannot be a reserved word: " ++ name
     else pure name
+
+-- Name parsing
+
+pIdent :: Parser String
+pIdent = try pQualifiedName <|> pIdentRaw
+
+-- Identifiers for data constructors must start with an uppercase letter
+pCtorName :: Parser String
+pCtorName = lexeme . try $ pCtorRaw
+
+-- Parse a dotted module name e.g Data.List or Control.Monad.Identity
+pModuleName :: Parser String
+pModuleName = intercalate "." <$> sepBy1 pCtorRaw (char '.')
+
+-- Parse a qualified name e.g Data.Functor.map
+pQualifiedName :: Parser String
+pQualifiedName = lexeme . try $ do
+  segments <- some (try $ pCtorRaw <* char '.')
+  name <- pIdentRaw'
+  pure $ intercalate "." segments ++ "." ++ name
+ where
+  -- raw ident with no lexeme wrapping
+  pIdentRaw' = do
+    name <- (:) <$> letterChar <*> many (letterChar <|> alphaNumChar <|> char '\'' <|> char '_')
+    if isReserved name
+      then fail $ "Identifier cannot be a reserved word: " ++ name
+      else pure name
 
 pInteger :: Parser Integer
 pInteger = lexeme L.decimal
